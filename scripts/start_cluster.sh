@@ -26,6 +26,7 @@ DOCKER_ARGS=(
   --gpus all
   --network host
   --ipc host
+  --device "${RDMA_DEVICE:-/dev/infiniband}"
   --ulimit memlock=-1
   --ulimit stack=67108864
   --entrypoint ray
@@ -35,6 +36,15 @@ DOCKER_ARGS=(
   -e VLLM_HOST_IP="$NODE_IP"
   -e RAY_DEDUP_LOGS=0
   -e VLLM_ENGINE_READY_TIMEOUT_S=3600
+  -e NCCL_NET=${NCCL_NET:-ib}
+  -e NCCL_IB_DISABLE=${NCCL_IB_DISABLE:-0}
+  -e NCCL_IB_HCA=${NCCL_IB_HCA:-rocep1s0f1}
+  -e NCCL_IB_ROCE_VERSION_NUM=${NCCL_IB_ROCE_VERSION_NUM:-2}
+  -e NCCL_IB_ADDR_FAMILY=${NCCL_IB_ADDR_FAMILY:-AF_INET}
+  -e NCCL_SOCKET_IFNAME=${NCCL_SOCKET_IFNAME:-enp1s0f1np1}
+  -e GLOO_SOCKET_IFNAME=${GLOO_SOCKET_IFNAME:-enp1s0f1np1}
+  -e NCCL_NVLS_ENABLE=${NCCL_NVLS_ENABLE:-0}
+  -e NCCL_CUMEM_ENABLE=${NCCL_CUMEM_ENABLE:-0}
 )
 
 if [[ -n "${HF_TOKEN:-}" ]]; then
