@@ -3,6 +3,7 @@ FROM ${BASE_IMAGE}
 
 ARG BASE_IMAGE=vllm/vllm-openai:deepseekv41-flash-0909
 ARG VLLM_EXL3_REF=21fa627a3933d80de2d1030e732354d8c3cd761e
+ARG VLLM_EXL3_REPO=https://github.com/vcruz305/vllm-exl3.git
 ARG EXLLAMAV3_REF=be57335b087e4f001c5caae061544df3c06ba01e
 ARG TORCH_CUDA_ARCH_LIST=12.1a
 
@@ -10,6 +11,7 @@ ENV DEBIAN_FRONTEND=noninteractive \
     TORCH_CUDA_ARCH_LIST=${TORCH_CUDA_ARCH_LIST} \
     MAX_JOBS=2 \
     VLLM_EXL3_REF=${VLLM_EXL3_REF} \
+    VLLM_EXL3_REPO=${VLLM_EXL3_REPO} \
     EXLLAMAV3_REF=${EXLLAMAV3_REF} \
     RECIPE_BASE_IMAGE=${BASE_IMAGE}
 
@@ -33,7 +35,7 @@ PY
 RUN python -m pip install --no-cache-dir --upgrade "setuptools>=77" wheel ninja \
     && python -m pip install --no-cache-dir "ray[cgraph]" huggingface_hub
 
-RUN git clone https://github.com/vcruz305/vllm-exl3.git /opt/vllm-exl3 \
+RUN git clone ${VLLM_EXL3_REPO} /opt/vllm-exl3 \
     && git -C /opt/vllm-exl3 checkout --detach ${VLLM_EXL3_REF} \
     && test "$(git -C /opt/vllm-exl3 rev-parse HEAD)" = "${VLLM_EXL3_REF}"
 

@@ -20,13 +20,41 @@ fi
 # Replace a stale local cluster container on this host.
 docker rm -f "$CONTAINER_NAME" >/dev/null 2>&1 || true
 
+# --- RDMA passthrough, fail-safe on hosts without RDMA ---------------------
+# ENABLE_RDMA=auto (default): map the device only when RDMA_DEVICE exists.
+# ENABLE_RDMA=1: require RDMA_DEVICE; fail loudly when it is missing.
+# ENABLE_RDMA=0: never map the device nor inject the IB/RoCE NCCL overrides,
+#                letting NCCL/Gloo use their normal network selection.
+ENABLE_RDMA="${ENABLE_RDMA:-auto}"
+RDMA_DEVICE="${RDMA_DEVICE:-/dev/infiniband}"
+case "$ENABLE_RDMA" in
+  auto|1|0) ;;
+  *)
+    echo "ERROR: ENABLE_RDMA must be auto, 1, or 0 (got '$ENABLE_RDMA')" >&2
+    exit 2
+    ;;
+esac
+rdma_enabled=0
+if [[ "$ENABLE_RDMA" == "1" ]]; then
+  if [[ ! -e "$RDMA_DEVICE" ]]; then
+    echo "ERROR: ENABLE_RDMA=1 but RDMA device '$RDMA_DEVICE' does not exist on this host." >&2
+    exit 2
+  fi
+  rdma_enabled=1
+elif [[ "$ENABLE_RDMA" == "auto" ]]; then
+  if [[ -e "$RDMA_DEVICE" ]]; then
+    rdma_enabled=1
+  else
+    echo "INFO: RDMA device '$RDMA_DEVICE' not found; omitting RDMA device mapping and network overrides." >&2
+  fi
+fi
+
 DOCKER_ARGS=(
   run -d --rm
   --name "$CONTAINER_NAME"
   --gpus all
   --network host
   --ipc host
-  --device "${RDMA_DEVICE:-/dev/infiniband}"
   --ulimit memlock=-1
   --ulimit stack=67108864
   --entrypoint ray
@@ -36,16 +64,23 @@ DOCKER_ARGS=(
   -e VLLM_HOST_IP="$NODE_IP"
   -e RAY_DEDUP_LOGS=0
   -e VLLM_ENGINE_READY_TIMEOUT_S=3600
-  -e NCCL_NET=${NCCL_NET:-ib}
-  -e NCCL_IB_DISABLE=${NCCL_IB_DISABLE:-0}
-  -e NCCL_IB_HCA=${NCCL_IB_HCA:-rocep1s0f1}
-  -e NCCL_IB_ROCE_VERSION_NUM=${NCCL_IB_ROCE_VERSION_NUM:-2}
-  -e NCCL_IB_ADDR_FAMILY=${NCCL_IB_ADDR_FAMILY:-AF_INET}
-  -e NCCL_SOCKET_IFNAME=${NCCL_SOCKET_IFNAME:-enp1s0f1np1}
-  -e GLOO_SOCKET_IFNAME=${GLOO_SOCKET_IFNAME:-enp1s0f1np1}
-  -e NCCL_NVLS_ENABLE=${NCCL_NVLS_ENABLE:-0}
-  -e NCCL_CUMEM_ENABLE=${NCCL_CUMEM_ENABLE:-0}
 )
+
+if [[ "$rdma_enabled" == "1" ]]; then
+  # Tested DGX Spark RoCE defaults; every variable stays overridable.
+  DOCKER_ARGS+=(
+    --device "$RDMA_DEVICE"
+    -e NCCL_NET=${NCCL_NET:-ib}
+    -e NCCL_IB_DISABLE=${NCCL_IB_DISABLE:-0}
+    -e NCCL_IB_HCA=${NCCL_IB_HCA:-rocep1s0f1}
+    -e NCCL_IB_ROCE_VERSION_NUM=${NCCL_IB_ROCE_VERSION_NUM:-2}
+    -e NCCL_IB_ADDR_FAMILY=${NCCL_IB_ADDR_FAMILY:-AF_INET}
+    -e NCCL_SOCKET_IFNAME=${NCCL_SOCKET_IFNAME:-enp1s0f1np1}
+    -e GLOO_SOCKET_IFNAME=${GLOO_SOCKET_IFNAME:-enp1s0f1np1}
+    -e NCCL_NVLS_ENABLE=${NCCL_NVLS_ENABLE:-0}
+    -e NCCL_CUMEM_ENABLE=${NCCL_CUMEM_ENABLE:-0}
+  )
+fi
 
 if [[ -n "${HF_TOKEN:-}" ]]; then
   DOCKER_ARGS+=( -e HF_TOKEN="$HF_TOKEN" )
