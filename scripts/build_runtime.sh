@@ -4,7 +4,7 @@ set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
 
 BASE_IMAGE="${BASE_IMAGE:-vllm/vllm-openai:deepseekv41-flash-0909}"
-VLLM_EXL3_REF="${VLLM_EXL3_REF:-8f4517e80416466fa4a3ad2eb28685021d39e95f}"
+VLLM_EXL3_REF="${VLLM_EXL3_REF:-3ce1ae08f3e4a9545c58d5ac6456807c702d524a}"
 VLLM_EXL3_REPO="${VLLM_EXL3_REPO:-https://github.com/vcruz305/vllm-exl3.git}"
 EXLLAMAV3_REF="${EXLLAMAV3_REF:-be57335b087e4f001c5caae061544df3c06ba01e}"
 TORCH_CUDA_ARCH_LIST="${TORCH_CUDA_ARCH_LIST:-12.1a}"
