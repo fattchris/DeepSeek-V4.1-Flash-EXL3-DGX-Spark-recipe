@@ -49,7 +49,7 @@ docker build \
   --build-arg VLLM_EXL3_REPO="$VLLM_EXL3_REPO" \
   --build-arg VLLM_EXL3_REF="$VLLM_EXL3_REF" \
   --build-arg EXLLAMAV3_REF="$EXLLAMAV3_REF" \
-  --build-arg TORCH_CUDA_ARCH_LIST="$TORCH_CUDA_ARCH_LIST" \
+  --build-arg CUDA_ARCH_LIST="$TORCH_CUDA_ARCH_LIST" \
   -t "$IMAGE" \
   "$RECIPE_ROOT"
 

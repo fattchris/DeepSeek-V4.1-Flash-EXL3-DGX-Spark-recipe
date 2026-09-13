@@ -33,7 +33,7 @@ class RecipeContractTests(unittest.TestCase):
         self.assertEqual(arg("VLLM_EXL3_REPO"), self.lock["vllm_exl3"]["repo"])
         self.assertEqual(arg("VLLM_EXL3_REF"), self.lock["vllm_exl3"]["commit"])
         self.assertEqual(arg("EXLLAMAV3_REF"), self.lock["exllamav3"]["commit"])
-        self.assertEqual(arg("TORCH_CUDA_ARCH_LIST"), self.lock["torch_cuda_arch_list"])
+        self.assertEqual(arg("CUDA_ARCH_LIST"), self.lock["torch_cuda_arch_list"])
         self.assertIn("physical_fused_k_guard_installed", dockerfile)
         self.assertIn('fused_k_source"] == "physical_trellis_geometry"', dockerfile)
 
