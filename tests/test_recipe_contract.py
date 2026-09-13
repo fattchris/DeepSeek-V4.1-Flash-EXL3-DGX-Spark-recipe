@@ -224,3 +224,11 @@ class RecipeContractTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class Sm120PreflightContractTests(unittest.TestCase):
+    def test_v41_model_import_matches_vllm_registry_package(self) -> None:
+        text = (ROOT / "scripts/preflight_sm120_uva.py").read_text()
+        self.assertIn("from vllm.models.deepseek_v4_1 import DeepseekV41ForCausalLM", text)
+        self.assertNotIn("deepseek_v4_1.nvidia.model import DeepseekV41ForCausalLM", text)
+
