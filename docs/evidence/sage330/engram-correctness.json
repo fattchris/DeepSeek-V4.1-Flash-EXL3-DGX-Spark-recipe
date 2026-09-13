@@ -1,0 +1,209 @@
+{
+  "scope": "Historical Engram component diagnostics; native adapter and stage hooks are not part of the extracted component PR",
+  "ranks": [
+    {
+      "rank": 0,
+      "source_result_sha256": "0820ebd96b4254163f79f1a9a41c96655826c0518568f82ed0975599899e107a",
+      "passed": true,
+      "source_sha256": {
+        "engram_cache_check.py": "642448af01f1a924255cd47cbee68d57bd46360cbb0700eb69b72656f203ec95",
+        "engram_stage_check.py": "c0d5aa4959c6548b6a8078dab21418a61108dd133920219ad26937319d2d55c0",
+        "engram_prefetch.py": "a385d3d939b9d0f049bdaf5366cd254c645117d918d7b3b9efe2b05b1f3a053a",
+        "cached_engram_table.py": "4ab833b9b0eab2279cdbe0a8154f6e62fdfba70681665d9809c8602a19be78f4",
+        "engram_rows.py": "3ff7efd8b2e720fd606011a4bb0c610eac661610ac9e57d18e49cb285cc8647e"
+      },
+      "cases": [
+        {
+          "layer": 1,
+          "rows": 0,
+          "max_error": 0,
+          "native_exact": true,
+          "independent_exact": false
+        },
+        {
+          "layer": 1,
+          "rows": 1,
+          "max_error": 0,
+          "native_exact": true,
+          "independent_exact": true
+        },
+        {
+          "layer": 1,
+          "rows": 48,
+          "max_error": 0,
+          "native_exact": true,
+          "independent_exact": true
+        },
+        {
+          "layer": 1,
+          "rows": 128,
+          "max_error": 0,
+          "native_exact": true,
+          "independent_exact": true
+        },
+        {
+          "layer": 1,
+          "rows": 8192,
+          "max_error": 0,
+          "native_exact": true,
+          "independent_exact": true
+        },
+        {
+          "layer": 14,
+          "rows": 0,
+          "max_error": 0,
+          "native_exact": true,
+          "independent_exact": false
+        },
+        {
+          "layer": 14,
+          "rows": 1,
+          "max_error": 0,
+          "native_exact": true,
+          "independent_exact": true
+        },
+        {
+          "layer": 14,
+          "rows": 48,
+          "max_error": 0,
+          "native_exact": true,
+          "independent_exact": true
+        },
+        {
+          "layer": 14,
+          "rows": 128,
+          "max_error": 0,
+          "native_exact": true,
+          "independent_exact": true
+        },
+        {
+          "layer": 14,
+          "rows": 8192,
+          "max_error": 0,
+          "native_exact": true,
+          "independent_exact": true
+        }
+      ],
+      "full_capacity": [
+        {
+          "layer": 1,
+          "rows_touched": 139264,
+          "cached_rows": 131072,
+          "raw_payload_bytes": 34603008,
+          "peak_rss_growth_bytes": 57344000,
+          "rss_growth_bound_bytes": 268435456
+        },
+        {
+          "layer": 14,
+          "rows_touched": 139264,
+          "cached_rows": 131072,
+          "raw_payload_bytes": 34603008,
+          "peak_rss_growth_bytes": 0,
+          "rss_growth_bound_bytes": 268435456
+        }
+      ]
+    },
+    {
+      "rank": 1,
+      "source_result_sha256": "8619e9f2084c12279023977a2f3ad24c13af5330cf66dba4e091e80e9b356842",
+      "passed": true,
+      "source_sha256": {
+        "engram_rows.py": "3ff7efd8b2e720fd606011a4bb0c610eac661610ac9e57d18e49cb285cc8647e",
+        "cached_engram_table.py": "4ab833b9b0eab2279cdbe0a8154f6e62fdfba70681665d9809c8602a19be78f4",
+        "engram_cache_check.py": "642448af01f1a924255cd47cbee68d57bd46360cbb0700eb69b72656f203ec95",
+        "engram_stage_check.py": "c0d5aa4959c6548b6a8078dab21418a61108dd133920219ad26937319d2d55c0",
+        "engram_prefetch.py": "a385d3d939b9d0f049bdaf5366cd254c645117d918d7b3b9efe2b05b1f3a053a"
+      },
+      "cases": [
+        {
+          "layer": 1,
+          "rows": 0,
+          "max_error": 0,
+          "native_exact": true,
+          "independent_exact": false
+        },
+        {
+          "layer": 1,
+          "rows": 1,
+          "max_error": 0,
+          "native_exact": true,
+          "independent_exact": true
+        },
+        {
+          "layer": 1,
+          "rows": 48,
+          "max_error": 0,
+          "native_exact": true,
+          "independent_exact": true
+        },
+        {
+          "layer": 1,
+          "rows": 128,
+          "max_error": 0,
+          "native_exact": true,
+          "independent_exact": true
+        },
+        {
+          "layer": 1,
+          "rows": 8192,
+          "max_error": 0,
+          "native_exact": true,
+          "independent_exact": true
+        },
+        {
+          "layer": 14,
+          "rows": 0,
+          "max_error": 0,
+          "native_exact": true,
+          "independent_exact": false
+        },
+        {
+          "layer": 14,
+          "rows": 1,
+          "max_error": 0,
+          "native_exact": true,
+          "independent_exact": true
+        },
+        {
+          "layer": 14,
+          "rows": 48,
+          "max_error": 0,
+          "native_exact": true,
+          "independent_exact": true
+        },
+        {
+          "layer": 14,
+          "rows": 128,
+          "max_error": 0,
+          "native_exact": true,
+          "independent_exact": true
+        },
+        {
+          "layer": 14,
+          "rows": 8192,
+          "max_error": 0,
+          "native_exact": true,
+          "independent_exact": true
+        }
+      ],
+      "full_capacity": [
+        {
+          "layer": 1,
+          "rows_touched": 139264,
+          "cached_rows": 131072,
+          "raw_payload_bytes": 34603008,
+          "peak_rss_growth_bytes": 57344000,
+          "rss_growth_bound_bytes": 268435456
+        },
+        {
+          "layer": 14,
+          "rows_touched": 139264,
+          "cached_rows": 131072,
+          "raw_payload_bytes": 34603008,
+          "peak_rss_growth_bytes": 0,
+          "rss_growth_bound_bytes": 268435456
+        }
+      ]
+    }
+  ]
+}
