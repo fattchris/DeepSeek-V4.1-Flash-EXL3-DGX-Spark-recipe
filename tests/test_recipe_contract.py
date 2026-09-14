@@ -207,6 +207,15 @@ class RecipeContractTests(unittest.TestCase):
                 continue
             if path == Path(__file__):
                 continue
+            if path.relative_to(ROOT).as_posix() == "docs/evidence/sage330/decode-baseline.json":
+                # This one receipt describes an old measured deployment, not a
+                # selectable runtime pin. Exempt only its historical identity
+                # field; continue checking the rest of this file and all others.
+                receipt = json.loads(text)
+                self.assertTrue(receipt["scope"].startswith("Historical full-model decode;"))
+                self.assertEqual(receipt["source_run_id"], "decode-baseline-r1")
+                self.assertEqual(receipt["runtime"].pop("plugin_commit"), stale[0])
+                text = json.dumps(receipt)
             for value in stale:
                 if value in text:
                     offenders.append(f"{path.relative_to(ROOT)}: stale plugin SHA {value}")

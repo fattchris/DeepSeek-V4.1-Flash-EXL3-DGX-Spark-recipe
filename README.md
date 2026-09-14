@@ -249,6 +249,7 @@ V4.1 context estimates must use measured backend allocation for capacity claims.
 - `docs/TP4.md` — TP4 qualification details
 - `docs/DISK_ENGRAM.md` — disk-backed Engram design/qualification
 - `docs/TP2.md` — TP2 qualification and EP2-vs-TP2 A/B
+- [SAGE 3.30 offload findings](docs/SAGE330_OFFLOAD_FINDINGS.md) — historical two-Spark results, reusable mechanisms and current integration gaps
 - `docs/SGLANG_V41_OPTIMIZATION_NOTES.md` — independently implemented lessons from the SGLang reference article
 - `THIRD_PARTY_NOTICES.md` — attribution and upstream licenses
 

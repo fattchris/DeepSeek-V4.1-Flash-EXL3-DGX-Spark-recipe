@@ -1,0 +1,181 @@
+{
+  "scope": "Historical full-model decode; sanitized projection of immutable local receipts, not current mainline qualification",
+  "source_run_id": "decode-baseline-r1",
+  "source_result_sha256": "4e5a0370845c689a9c1c5a2363b657f224a85ed4b51ab0c7f6f598897e2d1d69",
+  "passed": true,
+  "model": "vcruz305/DSV4.1-Flash-SAGE-EXL3-3.30bpw",
+  "model_revision": "e831e9e4d6bfeafa6d630848296417b1393404a3",
+  "runtime": {
+    "vllm": "0.1.dev20904+g179dd0fa9",
+    "torch": "2.13.0+cu130",
+    "cuda": "13.0",
+    "gpu": "GB10 SM121",
+    "plugin_commit": "8f4517e80416466fa4a3ad2eb28685021d39e95f",
+    "exllamav3_commit": "be57335b087e4f001c5caae061544df3c06ba01e",
+    "local_image_ids": [
+      "sha256:35556a154a9f7113d59e439cb072df7f3dab7a611b7550790e7d945e4c077279",
+      "sha256:5641fe52ddb8a868065b46b2b82e67f5f36d53df174a24d3d47a0bb01717f3db"
+    ],
+    "image_ids_are_publicly_pullable": false,
+    "flags": {
+      "--quantization": "exl3",
+      "--dtype": "bfloat16",
+      "--tokenizer-mode": "deepseek_v41",
+      "--tool-call-parser": "deepseek_v41",
+      "--reasoning-parser": "deepseek_v41",
+      "--tensor-parallel-size": "2",
+      "--distributed-executor-backend": "mp",
+      "--nnodes": "2",
+      "--max-model-len": "32768",
+      "--max-num-seqs": "1",
+      "--max-num-batched-tokens": "512",
+      "--gpu-memory-utilization": "0.85",
+      "--kv-cache-memory-bytes": "4294967296",
+      "--kv-cache-dtype": "fp8",
+      "--block-size": "64",
+      "--kernel-config": "{\"moe_backend\":\"triton\"}",
+      "--enable-auto-tool-choice": true,
+      "--enable-expert-parallel": true,
+      "--enable-ep-weight-filter": true,
+      "--disable-custom-all-reduce": true,
+      "--no-enable-prefix-caching": true,
+      "--language-model-only": true,
+      "--enforce-eager": true
+    },
+    "environment": {
+      "DSV41_ENGRAM_DISK": "1",
+      "DSV41_ENGRAM_DISK_THREADS": "4",
+      "DSV41_ENGRAM_DISK_CHUNK": "16",
+      "SAGE_DECODER_TAIL": "0"
+    },
+    "memory_limit_bytes_per_rank": 111669149696,
+    "memory_swap_limit_bytes_per_rank": 111669149696,
+    "expert_cache_bytes_per_rank": 85899345920,
+    "minimum_host_reserve_bytes": 8589934592,
+    "expert_backend": "custom heterogeneous packed MUL1 K2-K8 thin-expert kernel; grouped packed GEMM for fat experts; CPU-controlled routing and NVMe misses",
+    "speculative_decoding": false
+  },
+  "protocol": "Fresh deployment, eight quality warmup cases, then three alternating coding/writing pairs; C1; no separate decode warmup; fixed requests below",
+  "requests": {
+    "coding": {
+      "chat_template_kwargs": {
+        "thinking": false,
+        "reasoning_effort": "low"
+      },
+      "temperature": 0,
+      "seed": 17,
+      "messages": [
+        {
+          "role": "user",
+          "content": "Write a Python function named stable_unique that returns unique hashable list items in their original order. Include type hints, a short docstring, and three assert tests. Return only one Python code block."
+        }
+      ],
+      "max_tokens": 384
+    },
+    "long_form": {
+      "chat_template_kwargs": {
+        "thinking": false,
+        "reasoning_effort": "low"
+      },
+      "temperature": 0,
+      "seed": 17,
+      "messages": [
+        {
+          "role": "user",
+          "content": "Write a detailed technical explanation of why a model server can have fast token generation but slow time to first token. Explain prompt processing, memory bandwidth, disk reads, concurrency, and practical measurements. Use at least 600 words."
+        }
+      ],
+      "max_tokens": 512
+    }
+  },
+  "decode": {
+    "coding": {
+      "repetitions": 3,
+      "decode_tps": [
+        5.680941926157339,
+        4.395741860137424,
+        4.400202873471277
+      ],
+      "median_decode_tps": 4.400202873471277,
+      "min_decode_tps": 4.395741860137424,
+      "max_decode_tps": 5.680941926157339,
+      "ttft_seconds": [
+        1.9435611660592258,
+        3.3734186668880284,
+        3.40580500010401
+      ],
+      "completion_tokens": [
+        135,
+        135,
+        135
+      ],
+      "content_sha256": [
+        "f1372d27d704363fda40ea20feff4e7d83f9f6acfca640ced4e15d1f7b0bcae2",
+        "f1372d27d704363fda40ea20feff4e7d83f9f6acfca640ced4e15d1f7b0bcae2",
+        "f1372d27d704363fda40ea20feff4e7d83f9f6acfca640ced4e15d1f7b0bcae2"
+      ],
+      "p95_inter_token_seconds": [
+        0.2937078255577944,
+        0.3634330772212706,
+        0.3595610441989265
+      ]
+    },
+    "long_form": {
+      "repetitions": 3,
+      "decode_tps": [
+        5.189842061265438,
+        5.680964406940688,
+        5.819788404170867
+      ],
+      "median_decode_tps": 5.680964406940688,
+      "min_decode_tps": 5.189842061265438,
+      "max_decode_tps": 5.819788404170867,
+      "ttft_seconds": [
+        4.40630783396773,
+        2.8353034171741456,
+        3.033451084047556
+      ],
+      "completion_tokens": [
+        512,
+        512,
+        512
+      ],
+      "content_sha256": [
+        "63d4ca1198f115877ff891f456166627b02255fad94c6477319cdf44b153d7aa",
+        "8b189f0fe4d59524be8fc0e060f8787ce8f1339ab96e16221d5f642af3293183",
+        "243f9ddbb820f2865bd479bc9325325788f156065bcd427d4b383804ec9ade90"
+      ],
+      "p95_inter_token_seconds": [
+        0.352823645924218,
+        0.30949956248514354,
+        0.28890712512657046
+      ]
+    }
+  },
+  "quality_warmup_passed": true,
+  "cleanup": {
+    "restoration": {
+      "restored": "no experimental workers",
+      "ranks": [
+        {
+          "exit_code": 0,
+          "oom": false,
+          "restarts": 0,
+          "stopped": true
+        },
+        {
+          "exit_code": 137,
+          "oom": false,
+          "restarts": 0,
+          "stopped": true
+        }
+      ]
+    },
+    "trip": null
+  },
+  "limits": [
+    "Private hostnames, networking, mounts, raw environment and model tensors are omitted.",
+    "This is an evidence summary; full raw trace/identity bundles are not published.",
+    "The component PR is not the entire runtime and does not reproduce these results by itself."
+  ]
+}
