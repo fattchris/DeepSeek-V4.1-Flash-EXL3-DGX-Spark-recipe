@@ -33,7 +33,7 @@ class RecipeContractTests(unittest.TestCase):
         self.assertEqual(arg("VLLM_EXL3_REPO"), self.lock["vllm_exl3"]["repo"])
         self.assertEqual(arg("VLLM_EXL3_REF"), self.lock["vllm_exl3"]["commit"])
         self.assertEqual(arg("EXLLAMAV3_REF"), self.lock["exllamav3"]["commit"])
-        self.assertEqual(arg("TORCH_CUDA_ARCH_LIST"), self.lock["torch_cuda_arch_list"])
+        self.assertEqual(arg("CUDA_ARCH_LIST"), self.lock["torch_cuda_arch_list"])
         self.assertIn("physical_fused_k_guard_installed", dockerfile)
         self.assertIn('fused_k_source"] == "physical_trellis_geometry"', dockerfile)
 
@@ -224,3 +224,11 @@ class RecipeContractTests(unittest.TestCase):
 
 if __name__ == "__main__":
     unittest.main(verbosity=2)
+
+
+class Sm120PreflightContractTests(unittest.TestCase):
+    def test_v41_model_import_matches_vllm_registry_package(self) -> None:
+        text = (ROOT / "scripts/preflight_sm120_uva.py").read_text()
+        self.assertIn("from vllm.models.deepseek_v4_1 import DeepseekV41ForCausalLM", text)
+        self.assertNotIn("deepseek_v4_1.nvidia.model import DeepseekV41ForCausalLM", text)
+

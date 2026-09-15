@@ -44,8 +44,12 @@ def main() -> int:
     if not hasattr(offload, "cpu_offload_params"):
         fail("This vLLM revision lacks selective UVA cpu_offload_params")
 
+    # Import the class the way vLLM's model registry does: the package export.
+    # nvidia/model.py only defines DeepseekV41LLMForCausalLM; the registered
+    # DeepseekV41ForCausalLM lives in nvidia/vl_model.py and is re-exported
+    # from the package.
     try:
-        from vllm.models.deepseek_v4_1.nvidia.model import DeepseekV41ForCausalLM
+        from vllm.models.deepseek_v4_1 import DeepseekV41ForCausalLM
     except Exception as exc:
         fail(f"DeepSeek-V4.1 NVIDIA model import failed: {type(exc).__name__}: {exc}")
     if DeepseekV41ForCausalLM is None:
