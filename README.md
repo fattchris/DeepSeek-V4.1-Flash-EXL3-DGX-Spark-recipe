@@ -10,8 +10,11 @@ Serving and qualification tooling for **DeepSeek-V4.1-Flash EXL3** on NVIDIA DGX
 |---|---|---|
 | **TP4 / 4× Spark** | `vcruz305/DSV4.1-Flash-EXL3-4.75bpw` | **Per-expert mixed K3–K8 is supported by the pinned loader.** Resident Engram is a known GB10 UMA capacity failure. Full disk-backed Engram load/serve qualification is still required before calling TP4 deployable. |
 | **TP2 / 2× Spark** | `vcruz305/DSV4.1-Flash-SAGE-EXL3-3.30bpw` | Mixed-K format is supported; **two-Spark capacity qualification is now the active test target**. EP2 is the baseline; pure MoE TP2 is an explicit A/B. |
+| **TP1 / 1× Spark** | `vcruz305/DSV4.1-Flash-SAGE-EXL3-1.59bpw` | **Serving measured on one Spark** via *native ExLlamaV3* (not vLLM). 15.1–15.2 tok/s no-draft, 17.5 median / 20.1–24.7 repeat with the DSpark drafter. Separate stack: see [`one-spark-tp1/`](one-spark-tp1/). |
 
 The recipe deliberately separates **loader-format compatibility** from **hardware deployment qualification**.
+
+**TP1 is a different engine.** TP2 and TP4 run the pinned vLLM image with `vllm-exl3`. TP1 runs native ExLlamaV3 from a fork branch, does not use `runtime.lock.json`'s vLLM pin, and does not advance it.
 
 ## Locked runtime
 
@@ -46,6 +49,7 @@ DeepSeek-V4.1 has 384 routed experts, hidden size 5120, expert intermediate size
 |---|---:|---:|---|
 | TP4 + EP4 | 96 | 5120 × 2304 | TP4 correctness baseline |
 | TP2 + EP2 | 192 | 5120 × 2304 | TP2 correctness baseline |
+| **TP1 / EP1 (1× Spark, one device)** | **384** | **5120 × 2304** | **measured serving**; no sharding, every expert local. Runs *native ExLlamaV3*, not vLLM — see [`one-spark-tp1/`](one-spark-tp1/) |
 | pure MoE TP2 / EP1 | 384 | 5120 × 1152 | experimental A/B; 1152 is exactly 128-aligned |
 | pure MoE TP4 / EP1 | 384 | 5120 × 576 | guarded; 576 is not 128-aligned and 576→640 padding is not implemented here |
 
@@ -246,6 +250,7 @@ V4.1 context estimates must use measured backend allocation for capacity claims.
 - `scripts/v41_context_receipt.py` — V4.1 cache/capacity receipt helper
 - `scripts/kernel_dispatch_receipt.sh` — actual runtime/kernel evidence collector
 - `scripts/oom_guard.sh` — exact-container UMA safety guard
+- `one-spark-tp1/` — **single-Spark TP1 on native ExLlamaV3**: build, 64-byte pack re-lay, the `EXL3_ATS_COPY` placement split that makes 107 GiB fit, measured decode/prefill numbers, and TabbyAPI configuration guidance
 - `docs/TP4.md` — TP4 qualification details
 - `docs/DISK_ENGRAM.md` — disk-backed Engram design/qualification
 - `docs/TP2.md` — TP2 qualification and EP2-vs-TP2 A/B
