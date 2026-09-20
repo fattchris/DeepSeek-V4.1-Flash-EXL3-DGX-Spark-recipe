@@ -289,3 +289,59 @@ or `touch /tmp/epgate.allow`.
 
 **Upstream fix** (the proper one, for the loader rather than a patch): size the draft load's
 EP filter from `dspark_n_routed_experts`, not `n_routed_experts`.
+
+---
+
+## 5. Large context blocked by flashinfer's persistent topk on SM12x (`persistent_topk_sm12x_fix.py`)
+
+Booting with a large `max-model-len` fails at **engine init**:
+
+```
+RuntimeError: launch_persistent_topk, /workspace/csrc/libtorch_stable/topk.cu:138,
+persistent_topk would oversubscribe and the FilteredTopK fallback requires >=128KB smem per block
+(have 101376). total_ctas=90 > num_sms*occupancy=48
+(TopK=512, vec_size=4, ctas_per_group=90, smem=48688).
+```
+
+**Why**: flashinfer's `persistent_topk` derives its CTA count from the **logits stride**,
+which grows with context:
+
+```
+fixed smem = 2,080 B;  max chunk = (49,152 - 2,080)/4 = 11,768 elements
+CTAs = ceil(1,048,576 / 11,768) = 90        smem = 2,080 + 11,652*4 = 48,688
+```
+
+On **SM12x the device allows only 99 KiB smem/block** (`sharedMemPerBlockOptin` = 101,376),
+so the `FilteredTopK` fallback (which needs >=128 KiB/block) is unreachable and 90 CTAs do
+not fit in 48. This is **not** a memory problem — the KV pool had 1.9x headroom.
+
+**The fix**: `sparse_attn_indexer.py` already has a third branch — `ops.top_k_per_row_decode` —
+that does not use the persistent kernel, but `use_persistent_topk` is unconditional on CUDA,
+so it is never reached. The patch adds an SM12x guard so the per-row path is selected:
+
+```python
+and not current_platform.is_device_capability_family(120)
+and not current_platform.is_device_capability_family(121)
+```
+
+A *fallback-selection* change, not a kernel change: `top_k_per_row_decode` is the established
+non-persistent implementation and preserves the requested K.
+
+```bash
+python3 tools/engram/persistent_topk_sm12x_fix.py --probe   # show the selection logic
+python3 tools/engram/persistent_topk_sm12x_fix.py           # install
+python3 tools/engram/persistent_topk_sm12x_fix.py --undo
+```
+
+Restart required (the indexer is imported at engine start). Measured on 4x DGX Spark:
+
+| `max-model-len` | before | after |
+|---|---|---|
+| 262,144 | boots | boots |
+| **1,048,576** | **engine init fails** | **boots: 2,454,802 KV tokens, 2.34x concurrency** |
+
+Retrieval verified at the full context: needle-in-haystack at **998,755 tokens — PASS**
+(`finish_reason: stop`). Paris gate 4/4.
+
+**Upstream fix**: the per-row path should be selected automatically when the persistent launch
+would oversubscribe a low-smem device, rather than relying on a device-family check.
