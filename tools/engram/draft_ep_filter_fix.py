@@ -12,9 +12,19 @@
 # ".weight" names, the filter does not touch them, which is why scales loaded everywhere.
 #
 # Usage (inside the container, every node):
-#   python3 epfilter_fix.py --probe-only   # zero-boot: print the filter source + window table
-#   python3 epfilter_fix.py                # install
-#   python3 epfilter_fix.py --undo         # restore *.pre-epfilter backups
+#   python3 draft_ep_filter_fix.py --probe-only   # zero-boot: print the filter source + table
+#   python3 draft_ep_filter_fix.py                # install
+#   python3 draft_ep_filter_fix.py --undo         # restore *.pre-epfilter backups
+#
+# RESTART REQUIRED. This patches files on disk. The call site binds
+# `should_skip_weight` at import time (and dspark.py's loader binds its own
+# symbols the same way), so applying this to an ALREADY-RUNNING server prints
+# "installed" while the live process keeps calling the original function --
+# no error, and the fix appears to do nothing. Apply before the model loads,
+# or restart afterwards.
+#
+# PATCH ROOT. Defaults to /usr/local/lib/python3.12/dist-packages/vllm;
+# override with VLLM_PKG_ROOT=/path/to/site-packages/vllm.
 #
 # Installs:
 #   1. ep_weight_filter.py: wrapper so mtp.* names are never pre-filtered (the draft's own
@@ -28,7 +38,7 @@ import re
 import shutil
 import sys
 
-ROOT = "/usr/local/lib/python3.12/dist-packages/vllm"
+ROOT = os.environ.get("VLLM_PKG_ROOT") or "/usr/local/lib/python3.12/dist-packages/vllm"
 F_FILTER = ROOT + "/model_executor/model_loader/ep_weight_filter.py"
 F_LOADER = ROOT + "/model_executor/model_loader/default_loader.py"
 F_DSPARK = ROOT + "/models/deepseek_v4_1/nvidia/dspark.py"

@@ -25,7 +25,7 @@ import re
 import shutil
 import sys
 
-V = "/usr/local/lib/python3.12/dist-packages/vllm"
+V = os.environ.get("VLLM_PKG_ROOT") or "/usr/local/lib/python3.12/dist-packages/vllm"
 MODEL = f"{V}/models/deepseek_v4_1/nvidia/model.py"
 STATE = f"{V}/models/deepseek_v4_1/nvidia/model_state.py"
 MARK = "_ENGHOIST"
@@ -147,6 +147,7 @@ def patch_model():
     s = s[:m] + STAGE_METHOD.lstrip("\n") + "\n" + s[m:]
     for need in ("image_sentinel_mask", "gather_engram_hashes", "islice"):
         assert need in s, f"model.py lacks {need}"
+    compile(s, MODEL, "exec")   # validate before overwriting
     backup(MODEL)
     open(MODEL, "w").write(s)
     print("model.py: forward guard + stage_engram_rows")
@@ -194,6 +195,7 @@ def patch_state():
         "            )\n"
         "        return model_inputs\n",
     )
+    compile(s, STATE, "exec")   # validate before overwriting
     backup(STATE)
     open(STATE, "w").write(s)
     print("model_state.py: arm flag + per-step stage")
@@ -208,4 +210,4 @@ if __name__ == "__main__":
         fields()
         patch_model()
         patch_state()
-        print("done. Gate 1 = eager boot with VLLM_ENGRAM_HOIST_CHECK=1 (see ANSWER_FABLE_HOIST.md)")
+        print("done. Verify with an eager boot and VLLM_ENGRAM_HOIST_CHECK=1 (prints _ENGHOIST CHECK equal=...)")

@@ -23,7 +23,7 @@ import os
 import shutil
 import sys
 
-PKG = "/usr/local/lib/python3.12/dist-packages/vllm"
+PKG = os.environ.get("VLLM_PKG_ROOT") or "/usr/local/lib/python3.12/dist-packages/vllm"
 ENGRAM = os.path.join(PKG, "models/deepseek_v4_1/common/engram.py")
 BREAK = os.path.join(PKG, "compilation/breakable_cudagraph.py")
 BAK = ".pre_engramkey"
@@ -107,8 +107,15 @@ if not probe_only:
 """),
     ], "_ENGRAMKEY_FIX")
 
-# ---- 3. per-replay counter in the fork runner ---------------------------------
-patch(BREAK, [
+# ---- 3. per-replay counter in the fork runner (DIAGNOSTIC, optional) ----------
+# This probe is instrumentation only -- it does not change behaviour. The
+# breakable fork runner may be absent or shaped differently in another build, so
+# a failure here must not abort after fix #1 has already been written.
+if not os.path.exists(BREAK):
+    print("skipped (no breakable runner at %s): _FORKPROBE is diagnostic only" % BREAK)
+else:
+  try:
+    patch(BREAK, [
     ("""        entry.capture.replay()
 """,
      """        _fp_before = _forkprobe_engram()
@@ -141,6 +148,8 @@ def _forkprobe_engram() -> tuple[int, int]:
 
 
 def is_breakable_cudagraph_enabled() -> bool:"""),
-], "_FORKPROBE")
+  ], "_FORKPROBE")
+  except Exception as _exc:
+    print("skipped (runner probe failed, diagnostic only): %r" % (_exc,))
 
 print("engramkey done (%s)" % ("probe only" if probe_only else "fix + probe"))

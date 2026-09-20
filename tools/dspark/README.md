@@ -21,3 +21,23 @@ Patch scripts (idempotent, run in container, in order):
                     fixes the SM120 position-128 device assert
 
 Stage-0 probes (no boot): s0_tp4.py, qprobe.py
+
+Patch files (not scripts — apply to a vllm-exl3 checkout, not inside a container):
+
+  exl3_native_multik.patch, exl3_padded.patch
+    Python-side wiring for the native MoE entry points. They apply cleanly to
+    vllm-exl3 814d4fe (`git apply --check` rc=0), but the kernels they call are
+    shipped by the **still-open** vllm-exl3 PRs:
+
+      #31  multi-K fused MoE   (p2b_fused_moe_mk)
+      #32  codebook P2B_CB     (build-time codebook; required for mul1 packs)
+      #33  padded MoE         (p2b_fused_moe_padded, the CUDA-graph path)
+
+    Build the extension from PR #33 (it contains #31 and #32) — see
+    tools/multik/README.md for the build flags, which matter:
+    TORCH_CUDA_ARCH_LIST=12.1a, NVCC_APPEND_FLAGS, and -DP2B_CB=<1|2>.
+
+Store-scripts note: an earlier revision of this directory carried a full 4,729-line
+copy of vllm-exl3's `src/vllm_exl3/exl3.py`. Nothing referenced it, it was not the
+pinned revision, and it duplicated ~70% of this PR's bytes; it has been removed.
+Use the patches above against your own vllm-exl3 checkout instead.

@@ -60,7 +60,7 @@ import os
 import shutil
 import sys
 
-V = "/usr/local/lib/python3.12/dist-packages/vllm"
+V = os.environ.get("VLLM_PKG_ROOT") or "/usr/local/lib/python3.12/dist-packages/vllm"
 DISK = f"{V}/models/deepseek_v4_1/common/engram_disk.py"
 ENGRAM = f"{V}/models/deepseek_v4_1/common/engram.py"
 MARK = "# --- _ENGFAST"
@@ -391,9 +391,12 @@ def apply():
             "self._fd_s",
         ):
             assert need in s, f"engram_disk.py lacks {need!r}"
+        assembled = s.rstrip("\n") + "\n" + BLOCK
+        # Compile BEFORE overwriting: a syntax error in the appended block must
+        # not leave a broken engram_disk.py in the tree.
+        compile(assembled, DISK, "exec")
         shutil.copy2(DISK, DISK + ".pre_engfast")
-        open(DISK, "w").write(s.rstrip("\n") + "\n" + BLOCK)
-        compile(open(DISK).read(), DISK, "exec")
+        open(DISK, "w").write(assembled)
         print("applied:", DISK)
     e = open(ENGRAM).read()
     if "# _ENGFAST" in e:

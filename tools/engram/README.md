@@ -1,17 +1,73 @@
-# Disk-engram CUDA-graph fixes
+# Disk-engram and draft-loader fixes
 
-Two independent defects in the disk-backed Engram path, both of which only appear
-under **CUDA graph capture/replay** and neither of which shows up eagerly.
+Four silent defects on the DeepSeek-V4.1-Flash EXL3 serving path. None of them
+raises an error: they show up only as wrong token distributions (under CUDA-graph
+replay), as slow cold I/O, or as a draft model quietly running on a quarter of
+its expert weights.
 
-Apply both (idempotent, `--undo` supported) inside the serving container on **every
-rank**:
+Apply all four (idempotent, `--undo` supported) inside the serving container on
+**every rank**, **before the model loads**:
 
 ```bash
-python3 tools/engram/engram_key_fix.py     # correctness under replay
-python3 tools/engram/engram_hoist.py       # enables FULL_DECODE_ONLY capture
+python3 tools/engram/engram_key_fix.py          # replay keying          (GPU graphs)
+python3 tools/engram/engram_hoist.py            # enables FULL_DECODE_ONLY
+python3 tools/engram/engram_io_fix.py           # cold I/O, +27.4% on novel text
+python3 tools/engram/draft_ep_filter_fix.py     # draft ran at 25% of its experts
 ```
 
-Both are also safe to leave installed under eager and under PIECEWISE.
+Order does not matter between them; all four patch distinct sites, all are safe
+to leave installed under eager and under PIECEWISE, and all four must be in place
+before the process that loads the model starts (see the restart note below).
+
+### What each fix is worth (4x DGX Spark, TP4/EP4, bs1, k=2)
+
+| # | fix | effect |
+|---|---|---|
+| 1 | `engram_key_fix` | correctness under replay; without it acceptance collapses to 1.00 |
+| 2 | `engram_hoist` | unblocks `FULL_DECODE_ONLY` capture (was a hard CUDA error) |
+| 3 | `engram_io_fix` | +27.4% decode on **novel** text; ~0 on warm/repeat text |
+| 4 | `draft_ep_filter_fix` | **+9% to +20%** on every domain; best cell 30.21 tok/s |
+
+### Restart required
+
+Every script here patches files on disk. Python binds these symbols at import
+time, so applying a script to an **already-running** server changes the file and
+prints `installed` while the live process keeps using the old code — no error,
+and the fix appears to do nothing. Apply before starting the server, or restart
+it afterwards.
+
+### Runtime prerequisites
+
+- `VLLM_ENGRAM_DISK_BACKED=1` — the disk-engram path must be active, otherwise
+  fixes 1-3 are inert.
+- The model must be served with `cudagraph_mode: FULL_DECODE_ONLY` for fix 2 to
+  matter; **no environment variable enables it — it is a serve-yaml setting.**
+- `num_speculative_tokens: 2` (k=2) is the measured optimum on this hardware.
+- Fix 4 needs the loader + DSpark draft only; no CUDA graphs.
+- Fix 3's target (`engram_disk.py`) is part of the disk-engram overlay; fix 4's
+  targets (`ep_weight_filter.py`, `dspark.py`) are stock upstream vLLM.
+
+### Patch root
+
+The scripts default to `/usr/local/lib/python3.12/dist-packages/vllm`. Override
+with `VLLM_PKG_ROOT=/path/to/site-packages/vllm` if your install differs (the
+disk-engram Dockerfile resolves the same root dynamically via
+`Path(vllm.__file__).resolve().parent`).
+
+### Environment / flag switches
+
+| switch | effect |
+|---|---|
+| `VLLM_ENGRAM_HOIST=0` | disable fix 2's hoist (forward does the lookup itself) |
+| `VLLM_ENGRAM_HOIST_CHECK=1` | eager-only parity check (syncs; boots slowly) |
+| `VLLM_DSPARK_ALLOW_UNLOADED_EXPERTS=1` | downgrade fix 4's fail-closed gate |
+| `/tmp/engfast.off` | A/B switch: restore legacy row fetch |
+| `/tmp/engfast.nowill` | A/B switch: keep the gather, drop `WILLNEED` |
+| `/tmp/epfilter.off` | A/B switch: restore the original EP pre-filter |
+| `/tmp/epgate.allow` | A/B switch: allow unloaded draft experts |
+
+All are optional; every fix is active by default with **no environment set**, so
+Ray worker env drift cannot silently disable one.
 
 ---
 
@@ -81,13 +137,38 @@ _ENGHOIST CHECK n=2 equal=True ref=(2, 2, 24) fwd=(2, 2, 24)
 
 ---
 
-## Results (4x DGX Spark, TP4/EP4, bs1, k=2 spec decode)
+## Results
+
+Runtime identity for every number below. These matter as much as the config:
+
+| | |
+|---|---|
+| hardware | 4x NVIDIA DGX Spark (GB10, SM121), TP4 / EP4 |
+| kernel | `vllm_exl3_c` built from the vllm-exl3 PRs below, ABI 4 |
+| vllm-exl3 | the kernel PRs are **still open**: #31 (multi-K), #32 (codebook `P2B_CB`), #33 (padded). Build from those branches; the wheel does not exist on `main` yet. |
+| model | DeepSeek-V4.1-Flash EXL3 pack, served from `/models/dsv41-orig` style layout |
+| engine config | `cudagraph_mode: FULL_DECODE_ONLY`, `cudagraph_capture_sizes [3,6,9,12]`, `max-model-len 4096`, `enable-prefix-caching: true` |
+| spec decode | `method: dspark`, `num_speculative_tokens: 2`, `draft_sample_method: probabilistic`, `rejection_sample_method: block`, `quantization: mxfp4` |
+| engram | `VLLM_ENGRAM_DISK_BACKED=1` |
+| benchmark | `llm-inference-bench`, sustained 30 s cells, c=1, `max_tokens 512` |
 
 | config | ctx0 | repeat | ctx2048 |
 |---|---|---|---|
 | eager | 14.70 | 21.20 | 15.62 |
 | PIECEWISE | 13.84 | 20.03 | 13.80 |
-| **FULL_DECODE_ONLY + hoist** | **18.60** | **26.03** | **17.77** |
+| **FULL_DECODE_ONLY + hoist** | **18.60** | **26.03-26.34** | **17.77** |
+
+The repeat cell is quoted as a range: it is the same configuration measured on
+different boots (26.03 and 26.34 tok/s), and per-run spread of this size is
+normal here. Treat ~26 as the figure, not either endpoint.
+
+After fix 4 (the draft EP filter) the multi-domain matrix is:
+
+| domain | ctx0 | ctx2048 | acceptance |
+|---|---|---|---|
+| code | 27.02 | 27.01 | 1.89 / 1.92 |
+| prose | 27.44 | 30.21 | 1.97 / 2.21 |
+| structured | 27.73 | 29.70 | 1.99 / 2.14 |
 
 Correct output at every state (`The capital of France is` -> `Paris`, temp 0).
 
