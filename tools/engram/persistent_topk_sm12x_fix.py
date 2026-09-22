@@ -15,7 +15,7 @@ block -- which this device cannot provide. Result: engine init fails outright.
 that does not use the persistent kernel. The selection logic reaches it only when
 `use_coherent_topk` and `use_persistent_topk` are both false. `use_persistent_topk`
 is currently unconditional on CUDA, so this patch adds a device-capability guard:
-on SM12x, take the per-row path instead.
+on SM121 (GB10), take the per-row path instead.
 
 This is a *fallback selection* change, not a kernel change: `top_k_per_row_decode`
 is the established non-persistent implementation and preserves the requested K.
@@ -51,14 +51,13 @@ NEW = """        use_persistent_topk = (
             current_platform.is_cuda()
             and topk_tokens in (512, 1024, 2048)
             # _PERSISTENT_TOPK_SM12X: flashinfer's persistent_topk derives its CTA
-            # count from the logits stride, which grows with context. On SM12x the
+            # count from the logits stride, which grows with context. On SM121 the
             # device allows only 99 KiB smem/block, so at large max_model_len the
             # launch needs more CTAs than fit and the FilteredTopK fallback cannot
             # be satisfied (it needs >=128 KiB/block). Engine init then fails with
             # "persistent_topk would oversubscribe". Take the per-row path instead;
             # it is the established non-persistent implementation and preserves K.
-            and not current_platform.is_device_capability_family(120)
-            and not current_platform.is_device_capability_family(121)
+            and not current_platform.is_device_capability(121)
         )"""
 
 

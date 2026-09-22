@@ -311,17 +311,16 @@ fixed smem = 2,080 B;  max chunk = (49,152 - 2,080)/4 = 11,768 elements
 CTAs = ceil(1,048,576 / 11,768) = 90        smem = 2,080 + 11,652*4 = 48,688
 ```
 
-On **SM12x the device allows only 99 KiB smem/block** (`sharedMemPerBlockOptin` = 101,376),
+On **SM121 (GB10) the device allows only 99 KiB smem/block** (`sharedMemPerBlockOptin` = 101,376),
 so the `FilteredTopK` fallback (which needs >=128 KiB/block) is unreachable and 90 CTAs do
 not fit in 48. This is **not** a memory problem — the KV pool had 1.9x headroom.
 
 **The fix**: `sparse_attn_indexer.py` already has a third branch — `ops.top_k_per_row_decode` —
 that does not use the persistent kernel, but `use_persistent_topk` is unconditional on CUDA,
-so it is never reached. The patch adds an SM12x guard so the per-row path is selected:
+so it is never reached. The patch adds an SM121 guard so the per-row path is selected:
 
 ```python
-and not current_platform.is_device_capability_family(120)
-and not current_platform.is_device_capability_family(121)
+and not current_platform.is_device_capability(121)
 ```
 
 A *fallback-selection* change, not a kernel change: `top_k_per_row_decode` is the established
