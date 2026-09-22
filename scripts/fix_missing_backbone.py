@@ -94,7 +94,8 @@ def main() -> int:
     args = ap.parse_args()
 
     pack_idx = os.path.join(args.pack, "model.safetensors.index.json")
-    pack_wm = json.load(open(pack_idx))["weight_map"]
+    idx = json.load(open(pack_idx))
+    pack_wm = idx["weight_map"]
     need = pull_set(base_index(), pack_wm, args.n_layers)
     if not need:
         print("pack already has the backbone; nothing to do")
@@ -112,6 +113,8 @@ def main() -> int:
         tbl = shard_header(shard)
         for k in sorted(by_shard[shard]):
             dt, shape, st, en = tbl[k]
+            if en < st:
+                raise RuntimeError(f"{k}: inverted data range {st}..{en}")
             offsets[k] = (cur, cur + en - st, dt, shape, shard, st)
             cur += en - st
     total = cur
@@ -125,7 +128,8 @@ def main() -> int:
     for k in sorted(offsets):
         o1, o2, dt, shape, shard, st = offsets[k]
         data = fetch(f"{BASE}/{shard}", st, st + (o2 - o1) - 1)
-        assert len(data) == o2 - o1, f"short read {k}"
+        if len(data) != o2 - o1:
+            raise RuntimeError(f"short read {k}: got {len(data)} expected {o2 - o1}")
         with open(body, "r+b") as f:
             f.seek(o1)
             f.write(data)
@@ -139,17 +143,34 @@ def main() -> int:
     hjson = json.dumps(hdr).encode()
     hjson += b" " * ((8 + len(hjson) + 7) // 8 * 8 - 8 - len(hjson))
     out_path = os.path.join(args.pack, args.out_shard)
-    with open(out_path, "wb") as out, open(body, "rb") as f:
-        out.write(struct.pack("<Q", len(hjson)))
-        out.write(hjson)
-        while chunk := f.read(1 << 24):
-            out.write(chunk)
+    if args.out_shard in set(pack_wm.values()):
+        raise SystemExit(
+            f"refusing to truncate {out_path}: {args.out_shard} is already "
+            "referenced by the pack index"
+        )
+    tmp_shard = out_path + ".partial"
+    try:
+        with open(tmp_shard, "wb") as out, open(body, "rb") as f:
+            out.write(struct.pack("<Q", len(hjson)))
+            out.write(hjson)
+            while chunk := f.read(1 << 24):
+                out.write(chunk)
+            out.flush()
+            os.fsync(out.fileno())
+        os.replace(tmp_shard, out_path)
+    finally:
+        if os.path.exists(tmp_shard):
+            os.remove(tmp_shard)
     os.remove(body)
 
-    idx = json.load(open(pack_idx))
     for k in offsets:
         idx["weight_map"][k] = args.out_shard
-    json.dump(idx, open(pack_idx, "w"))
+    tmp_idx = pack_idx + ".partial"
+    with open(tmp_idx, "w", encoding="utf-8") as f:
+        json.dump(idx, f)
+        f.flush()
+        os.fsync(f.fileno())
+    os.replace(tmp_idx, pack_idx)
     print(f"wrote {out_path}; index now {len(idx['weight_map'])} keys")
     print("reload the model to pick up the backbone")
     return 0
