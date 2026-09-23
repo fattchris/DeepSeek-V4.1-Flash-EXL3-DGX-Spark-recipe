@@ -107,7 +107,6 @@ class DeployedProfileTests(unittest.TestCase):
     def test_profile_and_captured_config_agree(self) -> None:
         cases = (
             ("max-model-len", "MAX_MODEL_LEN"),
-            ("kv-cache-memory-bytes", "KV_CACHE_MEMORY_BYTES"),
             ("max-num-seqs", "MAX_NUM_SEQS"),
             ("max-num-batched-tokens", "MAX_NUM_BATCHED_TOKENS"),
             ("block-size", "BLOCK_SIZE"),
@@ -119,6 +118,14 @@ class DeployedProfileTests(unittest.TestCase):
                 str(self.yaml[yaml_key]), self.profile[env_key],
                 f"{yaml_key} in {CAPTURED.name} must match {env_key} in {PROFILE.name}",
             )
+
+    def test_profile_kv_budget_reaches_the_published_figure(self) -> None:
+        # The capture booted 8 GiB -> 2,454,802 tokens; the profile is raised
+        # so the linear scale reaches the published 3.97M-token budget.
+        captured = int(self.yaml["kv-cache-memory-bytes"])
+        profile = int(self.profile["KV_CACHE_MEMORY_BYTES"])
+        self.assertEqual(captured, 8589934592)
+        self.assertGreaterEqual(profile * 2454802 // captured, 3_970_000)
 
     def test_profile_context_limit_is_one_million(self) -> None:
         self.assertEqual(self.profile["MAX_MODEL_LEN"], "1048576")

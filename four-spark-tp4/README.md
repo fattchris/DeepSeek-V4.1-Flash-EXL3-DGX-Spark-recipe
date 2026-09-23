@@ -41,8 +41,10 @@ base image `vllm/vllm-openai:deepseekv41-flash-0909`, `vllm-exl3` `814d4fe` + Mo
 The serve config captured from the deployment is
 [`configs/serve-tp4-live.yaml`](../configs/serve-tp4-live.yaml).
 
-`profiles/tp4.env` reserves 8 GiB of KV per rank (2,454,802 tokens in the boot log). The KV
-budget grows linearly with `KV_CACHE_MEMORY_BYTES`, so raise it to reach the 3.97M-token budget.
+`profiles/tp4.env` reserves **13 GiB** of KV per rank (`KV_CACHE_MEMORY_BYTES=13958643712`),
+enough for the 3.97M-token budget. The captured 8 GiB config
+([`configs/serve-tp4-live.yaml`](../configs/serve-tp4-live.yaml)) booted with 2,454,802 tokens, and
+the budget scales linearly with the byte count.
 
 ## Geometry
 
