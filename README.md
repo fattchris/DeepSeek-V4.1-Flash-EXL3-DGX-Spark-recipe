@@ -13,20 +13,20 @@ folder per cluster size:
 
 ### Four Sparks (TP4 + EP4)
 
-Single stream, measured with `llm-inference-bench` (30-second sustained cells):
+Verified by **@fattchris** with `llm-inference-bench`. Every figure is a 30-second sustained cell:
 
 | Measurement | Result |
 |---|---:|
-| Decode, prose (ctx 2048) | **30.21 tok/s** |
-| Decode, structured (ctx 2048) | 29.70 tok/s |
-| Decode, code (ctx 0 / 2048) | 27.02 / 27.01 tok/s |
-| Max context | **1,048,576 tokens** (boots; 2,454,802 KV tokens; needle test passes at 998,755) |
+| Single-stream decode, prose | **30.2 tok/s** |
+| Single-stream decode, code | **33.4 tok/s** |
+| Aggregate decode, c = 1 / 2 / 4 / 8 | 27.8 / 43.9 / 57.7 / 61.5 tok/s |
+| KV budget | 3.97M tokens |
+| Max context | **1,048,576 tokens** (full 1M) |
 
-The decode figures were measured at `max-model-len 4096`, with DSpark k=2 (MXFP4 draft experts),
-decode-only CUDA graphs and disk-backed Engram. No multi-stream numbers have been recorded yet.
-Serving profile: [`profiles/tp4.env`](profiles/tp4.env). Runtime: `vllm-exl3` `814d4fe` plus the multi-K /
-padded MoE kernels from `4c95648`, ExLlamaV3 `be57335`, CUDA 13.0.1, `sm_121a`.
-[`four-spark-tp4/`](four-spark-tp4/README.md) has the full runtime identity and the KV budget.
+Settings: DSpark k=2 with MXFP4 draft experts, decode-only CUDA graphs and disk-backed Engram.
+Profile: [`profiles/tp4.env`](profiles/tp4.env). Runtime: `vllm-exl3` `814d4fe` plus the multi-K /
+padded MoE kernels from `4c95648`, ExLlamaV3 `be57335`, CUDA 13.0.1, `sm_121a`. The per-domain
+matrix and full runtime identity are in [`four-spark-tp4/`](four-spark-tp4/README.md).
 
 ### One Spark (TP1)
 
