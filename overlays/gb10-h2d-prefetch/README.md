@@ -10,4 +10,4 @@ cliff; keep 4.
 
 Apply inside the image or bind-mount the reader over site-packages, then run
 `apply.sh` so `exl3_reader_lock.json` hashes this file. Pair with
-`VLLM_EXL3_MEM_WATERFALL=0` (see `profiles/tp2-disk-engram.env`).
+`VLLM_EXL3_MEM_WATERFALL=0` (see `profiles/tp2.env`).

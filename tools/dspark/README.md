@@ -13,7 +13,8 @@ Spec config (serve yaml):
     rejection_sample_method: block
     quantization: mxfp4        # the draft quant override — REQUIRED
 
-Patch scripts (idempotent, run in container, in order):
+Patch scripts (idempotent, in order). `Dockerfile.tp4` runs them at build time;
+you only run them by hand when patching some other image:
   1. dq.py        - spec_decode/dspark/utils.py: _DRAFT_QUANT_OVERRIDE
   2. mkdq8.py     - dspark.py: _DQ8 MXFP8 dequant-at-load (draft attn -> bf16)
   3. fixswa.py    - flashinfer_sparse.py: DSpark non-causal SWA rows pass at
@@ -22,20 +23,21 @@ Patch scripts (idempotent, run in container, in order):
 
 Stage-0 probes (no boot): s0_tp4.py, qprobe.py
 
-Patch files (not scripts — apply to a vllm-exl3 checkout, not inside a container):
+Patch files (applied to the vllm-exl3 checkout by `Dockerfile.tp4`):
 
   exl3_native_multik.patch, exl3_padded.patch
     Python-side wiring for the native MoE entry points. They apply cleanly to
-    vllm-exl3 814d4fe (`git apply --check` rc=0), but the kernels they call are
-    shipped by the **still-open** vllm-exl3 PRs:
+    vllm-exl3 814d4fe (`git apply --check` rc=0). The kernels they call come
+    from these vllm-exl3 PRs (all merged; csrc/ is taken from 4c95648):
 
       #31  multi-K fused MoE   (p2b_fused_moe_mk)
       #32  codebook P2B_CB     (build-time codebook; required for mul1 packs)
       #33  padded MoE         (p2b_fused_moe_padded, the CUDA-graph path)
 
-    Build the extension from PR #33 (it contains #31 and #32) — see
-    tools/multik/README.md for the build flags, which matter:
-    TORCH_CUDA_ARCH_LIST=12.1a, NVCC_APPEND_FLAGS, and -DP2B_CB=<1|2>.
+    Build flags that matter: TORCH_CUDA_ARCH_LIST=12.1a and
+    NVCC_APPEND_FLAGS=-DP2B_CB=<1|2> (2 for the 4.75bpw mul1 pack). See
+    tools/multik/README.md in vllm-exl3. `scripts/build_tp4_runtime.sh`
+    sets both.
 
 Store-scripts note: an earlier revision of this directory carried a full 4,729-line
 copy of vllm-exl3's `src/vllm_exl3/exl3.py`. Nothing referenced it, it was not the

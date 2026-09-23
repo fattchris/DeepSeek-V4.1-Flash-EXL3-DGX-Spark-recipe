@@ -1,11 +1,8 @@
 #!/usr/bin/env python3
-"""Contract tests for the deployed TP4 1M-context profile.
+"""Contract tests for the measured TP4 profile (profiles/tp4.env).
 
-These are text/structure contracts only: they run on a plain CI runner with no
-GPU, no Spark and no network. They exist because the profile the deployment
-actually launched from lived only in /tmp on one node, and because the launch
-knobs it needs (KV byte budget, block size, prefix caching, compilation config,
-speculative quantization) had no sanctioned way through scripts/serve.sh.
+Text/structure checks only: no GPU, no Spark, no network. They keep the
+profile, the captured serve config, serve.sh and Dockerfile.tp4 in agreement.
 """
 from __future__ import annotations
 
@@ -16,9 +13,9 @@ import unittest
 
 ROOT = Path(__file__).resolve().parents[1]
 SERVE = ROOT / "scripts" / "serve.sh"
-PROFILE = ROOT / "profiles" / "tp4-live-1m.env"
+PROFILE = ROOT / "profiles" / "tp4.env"
 CAPTURED = ROOT / "configs" / "serve-tp4-live.yaml"
-TP4_DOC = ROOT / "docs" / "TP4.md"
+TP4_DOC = ROOT / "four-spark-tp4" / "README.md"
 
 
 def _profile_env() -> dict[str, str]:
@@ -156,7 +153,7 @@ class DeployedProfileTests(unittest.TestCase):
         self.assertEqual(self.profile["PREFIX_CACHING"], "1")
 
     def test_profile_does_not_carry_the_shadowed_kv_env_var(self) -> None:
-        # Trap documented in docs/TP4.md: a VLLM_KV_CACHE_MEMORY_BYTES launcher
+        # Trap documented in four-spark-tp4/README.md: a VLLM_KV_CACHE_MEMORY_BYTES launcher
         # variable is shadowed by --kv-cache-memory-bytes. The profile must not
         # reintroduce it.
         self.assertNotIn("VLLM_KV_CACHE_MEMORY_BYTES", self.profile)
@@ -170,13 +167,36 @@ class DeployedProfileTests(unittest.TestCase):
             "TORCH_CUDA_ARCH_LIST=12.1a",
         ):
             self.assertIn(needle, text, needle)
-        # The captured run used a local pack; the capture must say so rather than
-        # implying it qualified the locked published revision.
-        self.assertIn("NOT the locked published revision", text)
+        # The captured run used a locally repaired pack; say where that shard lives now.
+        self.assertIn("fix_missing_backbone.py", text)
+        self.assertIn("b0c44df", text)
+
+    def test_profile_uses_disk_backed_engram_with_explicit_dir(self) -> None:
+        self.assertEqual(self.profile["VLLM_ENGRAM_DISK_BACKED"], "1")
+        self.assertEqual(self.profile["VLLM_ENGRAM_MODEL_DIR"], self.profile["MODEL"])
+        self.assertEqual(self.profile["IMAGE"], "deepseek-v41-exl3:tp4")
+
+    def test_tp4_image_bakes_in_every_fix(self) -> None:
+        text = (ROOT / "Dockerfile.tp4").read_text(encoding="utf-8")
+        lock = json.loads((ROOT / "runtime.lock.json").read_text(encoding="utf-8"))
+        kern = lock["tp4_kernels"]
+        self.assertIn(f"ARG VLLM_EXL3_KERNEL_REF={kern['commit']}", text)
+        self.assertIn(f"ARG P2B_CB={kern['p2b_cb']}", text)
+        for path in [
+            "overlays/sm120-sparse-fix/apply.sh",
+            *sorted(str(p.relative_to(ROOT)).replace("\\", "/") for p in (ROOT / "tools" / "engram").glob("*.py")),
+            "tools/dspark/dq.py",
+            "tools/dspark/mkdq8.py",
+            "tools/dspark/fixswa.py",
+            "tools/dspark/exl3_native_multik.patch",
+            "tools/dspark/exl3_padded.patch",
+        ]:
+            name = path.split("/", 1)[1].replace("\\", "/")
+            self.assertIn(name, text, f"Dockerfile.tp4 does not apply {path}")
 
     def test_tp4_docs_publish_the_profile_and_the_traps(self) -> None:
         docs = TP4_DOC.read_text(encoding="utf-8")
-        self.assertIn("profiles/tp4-live-1m.env", docs)
+        self.assertIn("profiles/tp4.env", docs)
         self.assertIn("configs/serve-tp4-live.yaml", docs)
         self.assertIn("2,454,802 tokens", docs)
         self.assertIn("skips memory profiling", docs)

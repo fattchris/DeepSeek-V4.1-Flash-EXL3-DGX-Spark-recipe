@@ -1,33 +1,26 @@
-# Deployed TP4 serve config — reference capture, not a qualification artifact.
+# Serve config captured from the measured 4x Spark TP4 deployment (2026-09-23).
 #
 # Source: /tmp/serve-tp4-d203.yaml inside the `dsv41-tp4` container on the vLLM
-# server node (10.0.1.3), captured 2026-09-23 from the running deployment.
-# Reproduce through the sanctioned path with profiles/tp4-live-1m.env +
-# `bash scripts/serve_tp4.sh`; this file is checked in so the served profile is
-# reviewable and diffable instead of living only in /tmp on one node.
+# server node. profiles/tp4.env reproduces it through scripts/serve_tp4.sh;
+# keep the two in sync (tests/test_tp4_deployed_profile_contract.py).
 #
-# Runtime identity for the run this was captured from (AGENTS.md rule 8):
+# Runtime identity of the captured run:
 #   image           deepseek-v41-exl3:fresh
 #                   sha256:8c56095510365c839082869bfcb7d786a555e5cf37688ec43d9f70a0c0688bef
 #   base image      vllm/vllm-openai:deepseekv41-flash-0909
 #   vllm-exl3       vcruz305/vllm-exl3 @ 814d4fe38082cddd838b45418c7d13a95395a36a
-#   exllamav3       vcruz305/exllamav3 @ be57335b087e4f001c5caae061544df3c06ba01e
+#                   + MoE kernels from PR #33 (4c95648) + tools/dspark patches
+#   exllamav3       turboderp-org/exllamav3 @ be57335b087e4f001c5caae061544df3c06ba01e
 #   arch list       TORCH_CUDA_ARCH_LIST=12.1a, CUDA 13.0.1
-#   topology        TP4 + EP4 over 4x GB10 (Ray head 10.0.1.2, server 10.0.1.3)
-#   model path      /models/dsv41-orig  (host /var/tmp/dsv41-orig, 429 GB, 32 shards)
-#   model revision  LOCAL PACK — this is NOT the locked published revision
-#                   vcruz305/DSV4.1-Flash-EXL3-4.75bpw@e971fd55. Do not treat this
-#                   config as qualified against the locked snapshot (rule 3).
+#   topology        TP4 + EP4 over 4x GB10
+#   model           /models/dsv41-orig: the 4.75bpw pack plus the backbone
+#                   shard built locally by fix_missing_backbone.py; the published
+#                   repo ships that shard since b0c44df (33 shards)
+#   Engram          VLLM_ENGRAM_DISK_BACKED=1 in the launcher environment
 #
-# Effective values from that boot's log, for the record: kv_cache_memory_bytes
-# honored at 8.0 GiB with memory profiling skipped (so gpu-memory-utilization is
-# inert), GPU KV cache 2,454,802 tokens, max concurrency 2.34x at 1,048,576
-# tokens per request, /v1/models max_model_len 1,048,576.
-#
-# Differences from profiles/tp4-live-1m.env: the profile leaves
-# VLLM_ENGRAM_DISK_BACKED out (see the discrepancy note there). Everything that
-# affects the served command is identical. Keep the two files in sync.
-
+# Boot-log values: KV reserved 8.0 GiB (profiling skipped, so
+# gpu-memory-utilization is inert), GPU KV cache 2,454,802 tokens, max
+# concurrency 2.34x at 1,048,576 tokens per request.
 model: /models/dsv41-orig
 quantization: exl3
 tokenizer-mode: deepseek_v41

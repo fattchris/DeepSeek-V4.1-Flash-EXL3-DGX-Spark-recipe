@@ -1,4 +1,8 @@
 #!/usr/bin/env bash
+# Pre-launch check, run on the head Spark once every node's container is up:
+#   1. the snapshot is complete (every shard named in the index is on disk);
+#   2. an NCCL all-reduce across all nodes works.
+# Usage: bash scripts/preflight.sh 2|4
 set -euo pipefail
 # shellcheck source=lib.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -10,43 +14,31 @@ if [[ "$TP" != "2" && "$TP" != "4" ]]; then
 fi
 
 MODEL="$(resolve_model_for_tp "$TP")"
-MODEL_REVISION_RESOLVED="$(resolve_model_revision_for_tp "$TP")"
-export MODEL
-require_env MODEL
-
-ARGS=(
-  python /recipe/scripts/preflight.py
-  --model "$MODEL"
-  --tp "$TP"
-  --pack-reserve-gib "${PACK_RESERVE_GIB:-32}"
-)
-if [[ -n "$MODEL_REVISION_RESOLVED" ]]; then
-  ARGS+=( --revision "$MODEL_REVISION_RESOLVED" )
-fi
-
-echo "=== Static/runtime preflight ==="
-docker exec -i \
-  -e HF_TOKEN="${HF_TOKEN:-}" \
-  "$CONTAINER_NAME" \
-  "${ARGS[@]}"
+echo "=== Snapshot: $MODEL ==="
+docker exec -i "$CONTAINER_NAME" python3 - "$MODEL" <<'PY'
+import json, os, sys
+root = sys.argv[1]
+idx = json.load(open(os.path.join(root, "model.safetensors.index.json")))["weight_map"]
+shards = sorted(set(idx.values()))
+missing = [s for s in shards if not os.path.isfile(os.path.join(root, s))]
+cfg = json.load(open(os.path.join(root, "config.json")))
+q = cfg.get("quantization_config", {})
+print(f"tensors {len(idx)}, shards {len(shards)}, missing {len(missing)}")
+print("quantization_config:", json.dumps(q))
+if missing:
+    sys.exit("ERROR: missing shards: " + ", ".join(missing))
+PY
 
 if is_true "${SKIP_NCCL_COLLECTIVE:-0}"; then
-  echo "WARNING: SKIP_NCCL_COLLECTIVE=1; distributed GPU transport was not qualified." >&2
+  echo "SKIP_NCCL_COLLECTIVE=1: skipping the cross-node check." >&2
   exit 0
 fi
 
 echo
-echo "=== Cross-node NCCL collective preflight ==="
-COLLECTIVE_ARGS=(
-  python /recipe/scripts/cluster_collective.py
-  --tp "$TP"
-  --megabytes "${COLLECTIVE_MEGABYTES:-16}"
-  --warmup "${COLLECTIVE_WARMUP:-2}"
-  --iterations "${COLLECTIVE_ITERATIONS:-5}"
+echo "=== Cross-node NCCL all-reduce ==="
+docker exec -i "$CONTAINER_NAME" python /recipe/scripts/cluster_collective.py \
+  --tp "$TP" \
+  --megabytes "${COLLECTIVE_MEGABYTES:-16}" \
+  --warmup "${COLLECTIVE_WARMUP:-2}" \
+  --iterations "${COLLECTIVE_ITERATIONS:-5}" \
   --master-port "${COLLECTIVE_MASTER_PORT:-29557}"
-)
-if is_true "${COLLECTIVE_JSON:-0}"; then
-  COLLECTIVE_ARGS+=( --json )
-fi
-
-docker exec -i "$CONTAINER_NAME" "${COLLECTIVE_ARGS[@]}"

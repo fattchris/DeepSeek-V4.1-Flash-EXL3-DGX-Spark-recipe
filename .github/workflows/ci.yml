@@ -27,7 +27,7 @@ jobs:
 
       - name: Python syntax
         run: |
-          for f in scripts/*.py tests/*.py one-spark-tp1/scripts/*.py; do
+          for f in scripts/*.py tests/*.py one-spark-tp1/scripts/*.py tools/*/*.py; do
             python -m py_compile "$f"
           done
 
@@ -35,9 +35,7 @@ jobs:
         run: |
           python -m json.tool configs/quantization_config.example.json >/dev/null
           python -m json.tool runtime.lock.json >/dev/null
-          for f in attestations/*.json; do
-            python -m json.tool "$f" >/dev/null
-          done
+          python -m json.tool two-spark-tp2/tp2-e831e9e4-metadata.json >/dev/null
 
       - name: Runtime and deployment contract tests
         run: python -m unittest discover -s tests -p 'test_*.py' -v

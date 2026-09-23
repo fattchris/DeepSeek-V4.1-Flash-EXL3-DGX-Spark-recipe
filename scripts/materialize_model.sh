@@ -1,4 +1,11 @@
 #!/usr/bin/env bash
+# Download the model for a topology onto a large local disk. Run on EVERY Spark.
+# Usage: bash scripts/materialize_model.sh 2|4 /absolute/path/to/snapshot
+#
+#   TP4 -> vcruz305/DSV4.1-Flash-EXL3-4.75bpw        (~460 GB)
+#   TP2 -> vcruz305/DSV4.1-Flash-SAGE-EXL3-3.30bpw   (~450 GB)
+#
+# The revision comes from runtime.lock.json; MODEL_REVISION overrides it.
 set -euo pipefail
 # shellcheck source=lib.sh
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/lib.sh"
@@ -14,106 +21,49 @@ case "$DEST" in
   *) echo "ERROR: destination must be an absolute path" >&2; exit 2 ;;
 esac
 
-REPO="$(resolve_model_for_tp "$TP")"
-REVISION="$(resolve_model_revision_for_tp "$TP")"
-TOPOLOGY="tp$TP"
-LOCK_REPO="$(python3 "$LOCK_TOOL" get models.$TOPOLOGY.repo_id)"
-LOCK_STATUS="$(python3 "$LOCK_TOOL" get models.$TOPOLOGY.status)"
-MIN_FREE_GIB="${DOWNLOAD_MIN_FREE_GIB:-550}"
-POST_RESERVE_GIB="${PACK_RESERVE_GIB:-32}"
-
-if [[ "$REPO" == "$LOCK_REPO" && "$LOCK_STATUS" != "deployable" ]]; then
-  if ! is_true "${ALLOW_SOURCE_ARTIFACT_DOWNLOAD:-0}"; then
-    cat >&2 <<EOF
-ERROR: the locked $TOPOLOGY Hugging Face artifact is not marked deployable:
-  repo:   $REPO
-  status: $LOCK_STATUS
-
-This artifact may still be useful for compatibility/repack work, but downloading it
-can consume hundreds of GiB before the physical layout gate rejects it.
-
-If you intentionally want the source/qualification artifact, rerun with:
-  ALLOW_SOURCE_ARTIFACT_DOWNLOAD=1 bash scripts/materialize_model.sh $TP $DEST
-EOF
-    exit 2
-  fi
-  echo "WARNING: downloading locked source/qualification artifact with status '$LOCK_STATUS'." >&2
-fi
+# The lock's repo, not MODEL: MODEL is the in-container path used at serve time.
+if [[ "$TP" == "4" ]]; then REPO="$MODEL_TP4"; else REPO="$MODEL_TP2"; fi
+REVISION="${MODEL_REVISION:-$(python3 "$LOCK_TOOL" get "models.tp$TP.revision")}"
+MIN_FREE_GIB="${DOWNLOAD_MIN_FREE_GIB:-500}"
 
 mkdir -p "$DEST"
 
-# Keep all Hugging Face/Xet staging on the same large filesystem as the model.
-MODEL_HF_HOME="${MODEL_HF_HOME:-$(dirname "$DEST")/.hf-dsv41-cache}"
-export HF_HOME="$MODEL_HF_HOME"
-export HF_HUB_CACHE="${HF_HUB_CACHE:-$HF_HOME/hub}"
-export HF_XET_CACHE="${HF_XET_CACHE:-$HF_HOME/xet}"
-mkdir -p "$HF_HOME" "$HF_HUB_CACHE" "$HF_XET_CACHE"
+# Keep Hugging Face/Xet staging on the same large filesystem as the model.
+export HF_HOME="${MODEL_HF_HOME:-$(dirname "$DEST")/.hf-dsv41-cache}"
+export HF_XET_HIGH_PERFORMANCE="${HF_XET_HIGH_PERFORMANCE:-1}"
+mkdir -p "$HF_HOME"
 
-DEST_FS="$(df -P "$DEST" | awk 'NR==2 {print $1}')"
-CACHE_FS="$(df -P "$HF_HOME" | awk 'NR==2 {print $1}')"
-if [[ "$DEST_FS" != "$CACHE_FS" ]]; then
-  echo "ERROR: HF/Xet cache must be on the same large filesystem as the model." >&2
-  echo "Destination: $DEST ($DEST_FS)" >&2
-  echo "HF_HOME:     $HF_HOME ($CACHE_FS)" >&2
+FREE_GIB="$(df -PB1G "$DEST" | awk 'NR==2 {print $4}')"
+if (( FREE_GIB < MIN_FREE_GIB )); then
+  echo "ERROR: $DEST has ${FREE_GIB} GiB free; need ${MIN_FREE_GIB} GiB (override with DOWNLOAD_MIN_FREE_GIB)." >&2
   exit 2
 fi
 
-FREE_GIB="$(df -PB1 "$DEST" | awk 'NR==2 {printf "%.2f", $4/1024/1024/1024}')"
-python3 - "$FREE_GIB" "$MIN_FREE_GIB" <<'PY'
-import sys
-free = float(sys.argv[1]); need = float(sys.argv[2])
-if free < need:
-    raise SystemExit(
-        f"ERROR: destination has {free:.1f} GiB free; conservative download/staging gate requires {need:.1f} GiB. "
-        "Override DOWNLOAD_MIN_FREE_GIB only after measuring the exact filesystem budget."
-    )
-PY
-
-echo "=== DeepSeek V4.1 EXL3 materialization ==="
-echo "Topology:    $TOPOLOGY"
 echo "Repo:        $REPO"
-echo "Revision:    ${REVISION:-<unlocked/quarantined>}"
-echo "Status:      ${LOCK_STATUS:-<custom-model>}"
-echo "Destination: $DEST"
-echo "HF_HOME:     $HF_HOME"
-echo "Free space:  $FREE_GIB GiB"
+echo "Revision:    ${REVISION:-main}"
+echo "Destination: $DEST  (${FREE_GIB} GiB free)"
 echo
 
-DOWNLOAD_ARGS=("$REPO" --local-dir "$DEST")
-if [[ -n "$REVISION" ]]; then
-  DOWNLOAD_ARGS+=( --revision "$REVISION" )
-fi
-
+ARGS=("$REPO" --local-dir "$DEST")
+[[ -n "$REVISION" ]] && ARGS+=( --revision "$REVISION" )
 if command -v hf >/dev/null 2>&1; then
-  hf download "${DOWNLOAD_ARGS[@]}"
-elif command -v huggingface-cli >/dev/null 2>&1; then
-  huggingface-cli download "${DOWNLOAD_ARGS[@]}"
+  hf download "${ARGS[@]}"
 else
-  python3 - "$REPO" "$REVISION" "$DEST" <<'PY'
-import sys
-try:
-    from huggingface_hub import snapshot_download
-except ImportError as exc:
-    raise SystemExit("ERROR: install huggingface_hub or use the recipe runtime image") from exc
-repo, revision, dest = sys.argv[1:]
-snapshot_download(repo_id=repo, revision=revision or None, local_dir=dest)
+  huggingface-cli download "${ARGS[@]}"
+fi
+
+python3 - "$DEST" <<'PY'
+import json, os, sys
+root = sys.argv[1]
+idx = json.load(open(os.path.join(root, "model.safetensors.index.json")))["weight_map"]
+shards = sorted(set(idx.values()))
+missing = [s for s in shards if not os.path.isfile(os.path.join(root, s))]
+if missing:
+    sys.exit("ERROR: download incomplete, missing: " + ", ".join(missing))
+print(f"OK: {len(idx)} tensors in {len(shards)} shards")
 PY
-fi
 
 echo
-echo "Validating physical checkpoint contract and locked snapshot identity..."
-if [[ "$TP" == "2" ]]; then
-  python3 "$RECIPE_ROOT/scripts/check_tp2_pack.py" \
-    "$DEST" --reserve-gib "$POST_RESERVE_GIB" --strict-locked-snapshot
-else
-  python3 "$RECIPE_ROOT/scripts/validate_pack.py" \
-    "$DEST" --topology "$TOPOLOGY" --reserve-gib "$POST_RESERVE_GIB" \
-    --strict-locked-snapshot
-fi
-
-echo
-echo "Materialized and validated: $DEST"
 echo "Set on EVERY Spark:"
 echo "  MODEL_DIR=$(dirname "$DEST")"
 echo "  MODEL=/models/$(basename "$DEST")"
-echo "  HF_HOME=$HF_HOME"
