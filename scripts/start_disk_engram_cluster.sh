@@ -3,7 +3,7 @@ set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 RECIPE_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
-PROFILE="${DISK_ENGRAM_PROFILE:-$RECIPE_ROOT/profiles/tp4-disk-engram.env}"
+PROFILE="${DISK_ENGRAM_PROFILE:-$RECIPE_ROOT/profiles/tp4.env}"
 ROLE="${1:-}"
 if [[ "$ROLE" != "head" && "$ROLE" != "worker" ]]; then
   echo "Usage: $0 head|worker" >&2
@@ -31,7 +31,7 @@ for key in "${!_CALLER_ENV[@]}"; do
 done
 unset _CALLER_ENV key value
 
-export IMAGE="${IMAGE:-deepseek-v41-exl3:disk-engram}"
+export IMAGE="${IMAGE:-deepseek-v41-exl3:tp4}"
 export VLLM_ENGRAM_DISK_BACKED=1
 if [[ -z "${VLLM_ENGRAM_MODEL_DIR:-}" ]]; then
   if [[ -n "${MODEL:-}" && "$MODEL" == /* ]]; then

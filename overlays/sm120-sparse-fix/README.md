@@ -36,8 +36,8 @@ warmup dies in sequence at:
 
 ## Apply
 
-Run `apply.sh` inside each container after the exl3 plugin install (order
-with respect to other overlays does not matter; idempotent).
+`Dockerfile.tp4` runs `apply.sh` at build time. To patch another image, run it
+after the exl3 plugin install (idempotent; run before `tools/dspark/fixswa.py`).
 
 ## Verified
 

@@ -145,7 +145,7 @@ Runtime identity for every number below. These matter as much as the config:
 |---|---|
 | hardware | 4x NVIDIA DGX Spark (GB10, SM121), TP4 / EP4 |
 | kernel | `vllm_exl3_c` built from the vllm-exl3 PRs below, ABI 4 |
-| vllm-exl3 | the kernel PRs are **still open**: #31 (multi-K), #32 (codebook `P2B_CB`), #33 (padded). Build from those branches; the wheel does not exist on `main` yet. |
+| vllm-exl3 | kernels from PRs #31 (multi-K), #32 (codebook `P2B_CB`), #33 (padded), now merged; `Dockerfile.tp4` builds them from `4c95648` |
 | model | DeepSeek-V4.1-Flash EXL3 pack, served from `/models/dsv41-orig` style layout |
 | engine config | `cudagraph_mode: FULL_DECODE_ONLY`, `cudagraph_capture_sizes [3,6,9,12]`, `max-model-len 4096`, `enable-prefix-caching: true` |
 | spec decode | `method: dspark`, `num_speculative_tokens: 2`, `draft_sample_method: probabilistic`, `rejection_sample_method: block`, `quantization: mxfp4` |

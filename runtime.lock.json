@@ -1,6 +1,6 @@
 {
   "schema": "dsv41-exl3-runtime-lock.v1",
-  "generated_at": "2026-09-13T07:05:00Z",
+  "generated_at": "2026-09-23T17:00:00Z",
   "base_image": {
     "ref": "vllm/vllm-openai:deepseekv41-flash-0909",
     "digest": null,
@@ -14,12 +14,39 @@
     "repo": "https://github.com/turboderp-org/exllamav3.git",
     "commit": "be57335b087e4f001c5caae061544df3c06ba01e"
   },
+  "tp4_kernels": {
+    "repo": "https://github.com/vcruz305/vllm-exl3.git",
+    "commit": "4c95648f35638fa4b53b4ba219192ce2539db349",
+    "p2b_cb": 2,
+    "note": "csrc/ from vllm-exl3 PR #33 (contains #31 multi-K and #32 codebook), built over the vllm_exl3 pin with tools/dspark/*.patch. Used only by Dockerfile.tp4."
+  },
   "native_abi_min": 3,
   "torch_cuda_arch_list": "12.1a",
   "capabilities": {
-    "accepted_exl3_config_k": [2, 3, 4, 5, 6, 7, 8],
-    "exllamav3_moe_kernel_k": [1, 2, 3, 4, 5, 6, 7, 8],
-    "native_p2b_k": [2, 3, 4],
+    "accepted_exl3_config_k": [
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ],
+    "exllamav3_moe_kernel_k": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8
+    ],
+    "native_p2b_k": [
+      2,
+      3,
+      4
+    ],
     "routed_allocation_scope": "per_expert_exact_trellis_shapes",
     "tensor_level_mixed_k_within_layer": true,
     "heterogeneous_mixed_k_dispatch": "linear_exl3_python_loop",
@@ -33,7 +60,10 @@
     "tp_geometry_source": "RoutedExperts.moe_config.moe_parallel_config_before_process_tp",
     "v41_logical_global_kv_bytes_per_token": 890,
     "v41_context_capacity_requires_measured_backend_allocation": true,
-    "tp2_moe_parallel_ab": ["ep2", "pure_moe_tp2"],
+    "tp2_moe_parallel_ab": [
+      "ep2",
+      "pure_moe_tp2"
+    ],
     "tp2_pure_moe_tp_intermediate_local": 1152,
     "tp2_pure_moe_tp_128_aligned": true,
     "tp4_pure_moe_tp_intermediate_local": 576,
@@ -43,18 +73,18 @@
   "models": {
     "tp4": {
       "repo_id": "vcruz305/DSV4.1-Flash-EXL3-4.75bpw",
-      "revision": "e971fd559aed165dc9db20c75948b964cef81410",
-      "expected_shards": 32,
-      "status": "mixed_k_loader_ready_pending_disk_engram_full_serve",
+      "revision": "b0c44df832bcb49578cee2a3072b9177df68b965",
+      "expected_shards": 33,
+      "status": "serving_measured_tp4",
       "required_loader_contract": "per_expert_mixed_k_routed_trellis"
     },
     "tp2": {
       "repo_id": "vcruz305/DSV4.1-Flash-SAGE-EXL3-3.30bpw",
       "revision": "e831e9e4d6bfeafa6d630848296417b1393404a3",
       "expected_shards": 31,
-      "status": "mixed_k_loader_ready_pending_tp2_capacity_qualification",
+      "status": "loader_ready_no_serving_numbers",
       "required_loader_contract": "per_expert_mixed_k_routed_trellis",
-      "runtime_metadata_attestation": "attestations/tp2-e831e9e4-metadata.json"
+      "runtime_metadata_attestation": "two-spark-tp2/tp2-e831e9e4-metadata.json"
     }
   },
   "first_boot": {

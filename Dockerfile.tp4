@@ -1,0 +1,72 @@
+# TP4 serving image: everything the measured 4x Spark run needed, baked in.
+#
+# Layers, in order, on top of the disk-Engram image (itself on the locked
+# deepseek-v41-exl3:spark base):
+#   1. vllm_exl3_c rebuilt with the multi-K + padded MoE kernels
+#      (vllm-exl3 PRs #31/#32/#33, csrc/ taken from the PR #33 merge commit),
+#      codebook P2B_CB=2 (mul1 packs), plus the matching Python wiring
+#      (tools/dspark/*.patch) on the locked vllm-exl3 checkout;
+#   2. overlays/sm120-sparse-fix       (sparse-MLA dispatch on GB10);
+#   3. tools/dspark/{dq,mkdq8,fixswa}  (DSpark draft quant + SWA fixes);
+#   4. tools/engram/*                  (replay keying, FULL_DECODE_ONLY hoist,
+#                                       cold-I/O fix, draft EP filter, SM121 topk).
+# Every patch script is idempotent and fails the build if an anchor is missing,
+# so a base-image drift shows up here and not as wrong tokens at serve time.
+#
+# Build with: bash scripts/build_tp4_runtime.sh
+ARG BASE_RUNTIME=deepseek-v41-exl3:disk-engram
+FROM ${BASE_RUNTIME}
+USER root
+
+ARG VLLM_EXL3_KERNEL_REF=4c95648f35638fa4b53b4ba219192ce2539db349
+ARG P2B_CB=2
+
+# The patch scripts target the stock site-packages layout; refuse anything else.
+RUN python - <<'PY'
+import os, vllm
+root = os.path.dirname(os.path.realpath(vllm.__file__))
+want = "/usr/local/lib/python3.12/dist-packages/vllm"
+assert root == want, f"vLLM lives at {root}, patch scripts expect {want}"
+print("vllm root:", root)
+PY
+
+COPY tools /opt/dsv41-tools
+COPY overlays/sm120-sparse-fix /opt/dsv41-overlays/sm120-sparse-fix
+
+# 1. Kernels + Python wiring.
+RUN cd /opt/vllm-exl3 \
+    && (git cat-file -e "${VLLM_EXL3_KERNEL_REF}^{commit}" 2>/dev/null || git fetch origin main) \
+    && git checkout ${VLLM_EXL3_KERNEL_REF} -- csrc \
+    && git apply --directory=src/vllm_exl3 /opt/dsv41-tools/dspark/exl3_native_multik.patch \
+    && git apply --directory=src/vllm_exl3 /opt/dsv41-tools/dspark/exl3_padded.patch \
+    && CUSPARSE_DIR="$(find /usr/local/lib/python3*/dist-packages/nvidia -name cusparse.h -exec dirname {} \; 2>/dev/null | head -1)" \
+    && test -n "$CUSPARSE_DIR" \
+    && export CPATH="$CUSPARSE_DIR${CPATH:+:$CPATH}" \
+    && NVCC_APPEND_FLAGS="-DP2B_CB=${P2B_CB}" \
+       python -m pip install --no-cache-dir --no-build-isolation --no-deps --force-reinstall /opt/vllm-exl3
+
+# 2-4. vLLM patches (order matters: fixswa anchors on the sm120 decode-narrow patch).
+RUN bash /opt/dsv41-overlays/sm120-sparse-fix/apply.sh \
+    && python /opt/dsv41-tools/dspark/dq.py \
+    && python /opt/dsv41-tools/dspark/mkdq8.py \
+    && python /opt/dsv41-tools/dspark/fixswa.py \
+    && python /opt/dsv41-tools/engram/engram_key_fix.py \
+    && python /opt/dsv41-tools/engram/engram_hoist.py \
+    && python /opt/dsv41-tools/engram/engram_io_fix.py \
+    && python /opt/dsv41-tools/engram/draft_ep_filter_fix.py \
+    && python /opt/dsv41-tools/engram/persistent_topk_sm12x_fix.py
+
+# Import-level check: the kernels exist and every patched module still compiles.
+RUN python - <<'PY'
+import compileall, os, sys
+import vllm, vllm_exl3, vllm_exl3_c
+for sym in ("p2b_fused_moe_mk", "p2b_fused_moe_padded"):
+    assert hasattr(vllm_exl3_c, sym), f"vllm_exl3_c is missing {sym}"
+root = os.path.dirname(vllm.__file__)
+ok = compileall.compile_dir(os.path.join(root, "models/deepseek_v4_1"), quiet=1)
+ok &= compileall.compile_dir(os.path.join(root, "v1/worker/gpu/spec_decode"), quiet=1)
+sys.exit(0 if ok else 1)
+PY
+
+LABEL ai.dsv41.tp4.kernels="vllm-exl3@${VLLM_EXL3_KERNEL_REF} P2B_CB=${P2B_CB}"
+WORKDIR /workspace

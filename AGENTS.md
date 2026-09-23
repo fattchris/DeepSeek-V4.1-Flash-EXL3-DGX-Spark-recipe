@@ -10,7 +10,7 @@ This repo is a **serving recipe**, not the EXL3 quantizer and not a fork of Deep
 
 1. Preserve both TP2 and TP4 recipes. Do not optimize one by silently breaking the other.
 2. Never replace the dedicated DeepSeek V4.1 base image with stock pip vLLM. The V4.1 architecture is image-pinned.
-3. Do not silently advance `vllm-exl3`, ExLlamaV3, the base image, CUDA flags or a model revision. Update the pin table and qualification notes together.
+3. Do not silently advance `vllm-exl3`, ExLlamaV3, the base image, CUDA flags or a model revision. Update `runtime.lock.json` and the matching README together.
 4. TP4+EP4 is the correctness-first path: 96 whole main experts/rank at 5120 x 2304.
 5. TP2+EP2 is experimental: 192 whole main experts/rank and a much tighter memory budget.
 6. The ABI-3 V4.1 native MoE path must remain opt-in until hardware evidence supports changing that policy.
@@ -19,24 +19,22 @@ This repo is a **serving recipe**, not the EXL3 quantizer and not a fork of Deep
 9. Keep Engram variants explicit. A disk-backed or node-local Engram patch is a separate experimental variable, not a hidden part of the baseline.
 10. Preserve third-party attribution. If code is copied/adapted, add exact source URLs/commits/files and licensing to `THIRD_PARTY_NOTICES.md`.
 
-## Validation before merging
+## Checks before merging
 
 At minimum:
 
 ```bash
 bash -n scripts/*.sh
-python -m py_compile scripts/preflight.py
+python -m pytest -q tests
 python -m json.tool configs/quantization_config.example.json >/dev/null
 ```
 
-For runtime changes, test the Docker build on a DGX Spark and run:
+For runtime changes, build the image on a DGX Spark and run:
 
 ```bash
-./scripts/preflight.sh 4
-./scripts/runtime_identity.sh
+bash scripts/preflight.sh 4
+bash scripts/smoke_test.sh
 ```
-
-A runtime change touching TP2 must also run the TP2 preflight and document whether a real TP2 pack was loaded.
 
 ## Benchmark discipline
 

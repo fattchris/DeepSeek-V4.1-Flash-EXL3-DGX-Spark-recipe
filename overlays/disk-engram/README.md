@@ -46,23 +46,10 @@ deepseek-v41-exl3:disk-engram
 
 Manual bind mounts are reserved for targeted debugging because they bypass those build assertions.
 
-## Qualification
+## Use
 
-Start each Spark with:
-
-```bash
-bash scripts/start_disk_engram_cluster.sh head
-# or worker
-```
-
-Then use:
-
-```bash
-bash scripts/tp4_disk_engram_min_fit.sh --check
-bash scripts/tp4_disk_engram_min_fit.sh
-```
-
-The launcher performs an all-node Ray preflight before model loading. See `docs/DISK_ENGRAM.md`.
+Start each Spark with `bash scripts/start_disk_engram_cluster.sh head|worker`, then serve with
+`scripts/serve_tp4.sh` or `scripts/serve_tp2.sh`. See `docs/DISK_ENGRAM.md`.
 
 ## License / provenance
 

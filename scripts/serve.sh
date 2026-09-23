@@ -275,7 +275,7 @@ Model:                  $MODEL
 Model revision:         ${MODEL_REVISION_RESOLVED:-<local-or-unpinned-override>}
 Served name:            $SERVED_MODEL_NAME
 EXL3 backend variant:   $BACKEND_LABEL
-Runtime HF override:    $( [[ -n "$HF_OVERRIDES_JSON" && "$HF_OVERRIDES_JSON" != "{}" ]] && echo attested || echo none )
+Runtime HF override:    $( [[ -n "$HF_OVERRIDES_JSON" && "$HF_OVERRIDES_JSON" != "{}" ]] && echo set || echo none )
 Native V4.1 MoE:        $NATIVE_MOE
 Disk-backed Engram:     $DISK_ENGRAM
 Engram model dir:       ${VLLM_ENGRAM_MODEL_DIR:-<resident-or-unset>}
