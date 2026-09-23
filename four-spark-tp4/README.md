@@ -7,17 +7,24 @@
 
 ## Performance
 
-4× DGX Spark (GB10), TP4 + EP4, `llm-inference-bench`, every figure a 30-second sustained cell:
+4× DGX Spark (GB10), TP4 + EP4, single stream (c=1), DSpark k=2 with MXFP4 draft experts,
+`FULL_DECODE_ONLY` CUDA graphs, disk-backed Engram. Measured with `llm-inference-bench`; each figure
+is a 30-second sustained cell with `max_tokens 512` at `max-model-len 4096`:
 
-| Measurement | Result |
-|---|---:|
-| Single-stream decode, prose | **30.2 tok/s** |
-| Single-stream decode, code | **33.4 tok/s** |
-| Best warm single stream | 33.37 tok/s |
-| Aggregate decode, c = 1 / 2 / 4 / 8 | 27.8 / 43.9 / 57.7 / 61.5 tok/s |
-| Max context | 1,048,576 tokens |
+| Domain | ctx 0 | ctx 2048 | Draft acceptance |
+|---|---:|---:|---:|
+| prose | 27.44 | **30.21** | 1.97 / 2.21 |
+| structured | 27.73 | 29.70 | 1.99 / 2.14 |
+| code | 27.02 | 27.01 | 1.89 / 1.92 |
 
-These are the launch-post numbers. The raw bench output is not checked in yet.
+Warm repeat prompt: about 26 tok/s. Eager mode on the same stack: 14.70 tok/s at ctx 0.
+
+**1M context.** With `max-model-len 1048576` the engine boots and reports **2,454,802 tokens** of KV
+(8 GiB KV per rank, 2.34 concurrent 1M-token requests). A needle-in-a-haystack test at 998,755
+tokens passes. No tok/s figure was recorded at 1M.
+
+No multi-stream (c > 1) numbers have been recorded yet. Per-fix before/after tables are in
+[`tools/engram/README.md`](../tools/engram/README.md).
 
 Serving configuration: [`profiles/tp4.env`](../profiles/tp4.env). It sets 1M context,
 `max_num_seqs=4`, the DSpark drafter at k=2 with MXFP4 draft experts, decode-only CUDA graphs
@@ -27,13 +34,8 @@ base image `vllm/vllm-openai:deepseekv41-flash-0909`, `vllm-exl3` `814d4fe` + Mo
 The serve config captured from the deployment is
 [`configs/serve-tp4-live.yaml`](../configs/serve-tp4-live.yaml).
 
-**KV budget.** The profile reserves 8 GiB of KV per rank. The boot log reports that as
-**2,454,802 tokens** (2.34 concurrent 1M-token requests). The launch post gave 3.97M. That figure
-needs a larger `KV_CACHE_MEMORY_BYTES` (KV grows linearly with the byte budget, so roughly
-13 GiB). The captured config has no setting for it.
-
-The table in [`tools/engram/README.md`](../tools/engram/README.md) breaks down what each fix
-contributed (replay keying, CUDA-graph hoist, cold-I/O, draft EP filter, SM121 top-k).
+To get more KV, raise `KV_CACHE_MEMORY_BYTES`. KV capacity grows linearly with the byte budget.
+This has not been re-measured above 8 GiB.
 
 ## Geometry
 
