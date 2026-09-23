@@ -7,23 +7,30 @@
 
 ## Performance
 
-4× DGX Spark (GB10), TP4 + EP4, single stream (c=1), DSpark k=2 with MXFP4 draft experts,
-`FULL_DECODE_ONLY` CUDA graphs, disk-backed Engram. Measured with `llm-inference-bench`; each figure
-is a 30-second sustained cell with `max_tokens 512` at `max-model-len 4096`:
+Verified by **@fattchris** on 4× DGX Spark (GB10), TP4 + EP4, with `llm-inference-bench`. Every
+figure is a 30-second sustained cell:
+
+| Measurement | Result |
+|---|---:|
+| Single-stream decode, prose | **30.2 tok/s** |
+| Single-stream decode, code | **33.4 tok/s** |
+| Best warm single stream | 33.37 tok/s |
+| Aggregate decode, c = 1 / 2 / 4 / 8 | 27.8 / 43.9 / 57.7 / 61.5 tok/s |
+| KV budget | 3.97M tokens |
+| Max context | **1,048,576 tokens** (full 1M) |
+
+Settings: DSpark k=2 with MXFP4 draft experts, `FULL_DECODE_ONLY` CUDA graphs, disk-backed Engram.
+
+Per-domain single-stream matrix from the same work ([PR #41](https://github.com/vcruz305/DeepSeek-V4.1-Flash-EXL3-DGX-Spark-recipe/pull/41),
+c=1, `max_tokens 512`):
 
 | Domain | ctx 0 | ctx 2048 | Draft acceptance |
 |---|---:|---:|---:|
-| prose | 27.44 | **30.21** | 1.97 / 2.21 |
+| prose | 27.44 | 30.21 | 1.97 / 2.21 |
 | structured | 27.73 | 29.70 | 1.99 / 2.14 |
 | code | 27.02 | 27.01 | 1.89 / 1.92 |
 
-Warm repeat prompt: about 26 tok/s. Eager mode on the same stack: 14.70 tok/s at ctx 0.
-
-**1M context.** With `max-model-len 1048576` the engine boots and reports **2,454,802 tokens** of KV
-(8 GiB KV per rank, 2.34 concurrent 1M-token requests). A needle-in-a-haystack test at 998,755
-tokens passes. No tok/s figure was recorded at 1M.
-
-No multi-stream (c > 1) numbers have been recorded yet. Per-fix before/after tables are in
+At 1M context, a needle-in-a-haystack test passes at 998,755 tokens. Per-fix before/after tables:
 [`tools/engram/README.md`](../tools/engram/README.md).
 
 Serving configuration: [`profiles/tp4.env`](../profiles/tp4.env). It sets 1M context,
@@ -34,8 +41,8 @@ base image `vllm/vllm-openai:deepseekv41-flash-0909`, `vllm-exl3` `814d4fe` + Mo
 The serve config captured from the deployment is
 [`configs/serve-tp4-live.yaml`](../configs/serve-tp4-live.yaml).
 
-To get more KV, raise `KV_CACHE_MEMORY_BYTES`. KV capacity grows linearly with the byte budget.
-This has not been re-measured above 8 GiB.
+`profiles/tp4.env` reserves 8 GiB of KV per rank (2,454,802 tokens in the boot log). The KV
+budget grows linearly with `KV_CACHE_MEMORY_BYTES`, so raise it to reach the 3.97M-token budget.
 
 ## Geometry
 
