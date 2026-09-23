@@ -160,4 +160,60 @@ Only then qualify independently:
 
 Do not infer 128K viability from the disk-Engram parity tests alone.
 
+## Deployed reference profile (1M context, DSpark on, CUDA graphs on)
+
+Gate 4 above is the *first-boot* gate. A separate, explicitly-qualified deployment currently
+serves TP4 with a 1M-token context, DSpark on and decode-only CUDA graphs. Its full launch
+surface is checked in so it is reviewable instead of living in `/tmp` on one node:
+
+- [`../profiles/tp4-live-1m.env`](../profiles/tp4-live-1m.env) — launchable profile for `scripts/serve_tp4.sh`
+- [`../configs/serve-tp4-live.yaml`](../configs/serve-tp4-live.yaml) — the captured serve config verbatim
+
+What the deployed profile sets beyond the first-boot gate:
+
+| knob | value | why it matters |
+|---|---|---|
+| `MAX_MODEL_LEN` | `1048576` | 1M-token context |
+| `KV_CACHE_MEMORY_BYTES` | `8589934592` (8 GiB) | manual KV budget; **disables** profiling, so `GPU_MEMORY_UTILIZATION` is inert |
+| `MAX_NUM_SEQS` | `4` | four concurrent sequences |
+| `MAX_NUM_BATCHED_TOKENS` | `4096` | with a draft block, vLLM warns this is below the speculative-scheduling recommendation |
+| `BLOCK_SIZE` | `128` | KV block size |
+| `PREFIX_CACHING` | `1` | explicit |
+| `DSPARK` | `1` | with `NUM_SPECULATIVE_TOKENS=2` and `SPECULATIVE_QUANTIZATION=mxfp4` |
+| `EXL3_MOE_KERNEL` | `native` | native kernel while ABI-3 V4.1 native MoE stays OFF (rule 6) |
+| `COMPILATION_CONFIG` | `{"cudagraph_mode":"FULL_DECODE_ONLY","cudagraph_capture_sizes":[3,6,9,12]}` | decode-only graph capture |
+
+Recorded effective values for the captured run (identity: image
+`deepseek-v41-exl3:fresh` = `sha256:8c560955…`, `vllm-exl3` @ `814d4fe3…`, `exllamav3` @
+`be57335b…`, `TORCH_CUDA_ARCH_LIST=12.1a`, CUDA 13.0.1, TP4+EP4, model path `/models/dsv41-orig`):
+
+```text
+kv cache reserved           8.0 GiB (profiling skipped)
+GPU KV cache size           2,454,802 tokens
+max concurrency @1M req     2.34x
+/v1/models max_model_len    1,048,576
+```
+
+That run used a **local 429 GB pack** (`/models/dsv41-orig`), not the locked published revision
+`vcruz305/DSV4.1-Flash-EXL3-4.75bpw@e971fd55`. Per rule 3, this profile is a reference capture,
+**not** a qualification of the locked snapshot, and it does not advance any pin. Treat it as the
+starting point for an explicit qualification, and record throughput against the identity above if
+numbers are ever published from it (rule 8).
+
+Two operational traps this profile documents:
+
+1. `KV_CACHE_MEMORY_BYTES` and `GPU_MEMORY_UTILIZATION` cannot both be in force. vLLM reserves the
+   byte budget and skips memory profiling, so a utilization value set alongside it silently does
+   nothing. Choose one mechanism per profile.
+2. A stale `VLLM_KV_CACHE_MEMORY_BYTES` environment variable in a launcher is shadowed by the
+   `--kv-cache-memory-bytes` argument. The captured deployment carried `17179869184` (16 GiB) in
+   the launcher while the served config reserved 8 GiB; delete the environment form when a
+   profile uses the flag.
+3. The captured launcher exported `VLLM_ENGRAM_DISK_BACKED=1` while the container had **no**
+   `VLLM_ENGRAM_MODEL_DIR` and the served config carried only
+   `--engram-config {"cpu_offload":false}`. The disk-backed overlay cannot have been reachable in
+   that state, and `scripts/serve.sh` fails closed on exactly that combination, so the profile
+   leaves the variable out. Which Engram mechanism the deployment intended is an open question for
+   the maintainer (rule 9).
+
 See [`DISK_ENGRAM.md`](DISK_ENGRAM.md) for the storage path and overlay details.
