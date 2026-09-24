@@ -46,6 +46,77 @@ enough for the 3.97M-token budget. The captured 8 GiB config
 ([`configs/serve-tp4-live.yaml`](../configs/serve-tp4-live.yaml)) booted with 2,454,802 tokens, and
 the budget scales linearly with the byte count.
 
+## TP-MoE (EP1): current best serving configs
+
+An alternative to the EP4 path above: route MoE through tensor parallelism
+(`enable-expert-parallel false`, `enable-ep-weight-filter false`,
+`MOE_PARALLEL_MODE=tp`) instead of expert parallelism. Requires
+**[vllm-exl3 PR #36](https://github.com/vcruz305/vllm-exl3/pull/36)**
+(Hadamard-aligned uneven TP MoE, `VLLM_EXL3_MOE_TP_ALIGN=128`) and
+**[vllm-exl3 PR #37](https://github.com/vcruz305/vllm-exl3/pull/37)**
+(padded-MoE loops bounded by `n_valid`). Also sets `VLLM_EXL3_TRELLIS_ARENA=0`.
+Cold load is ~9 minutes.
+
+Measured by **@fattchris** on 4x DGX Spark (GB10), TP4, DSpark, with
+`llm-inference-bench` v0.4.29 (20s sustained cells), 2026-09-24.
+
+Two profiles, both in [`profiles/`](../profiles) and
+[`configs/`](../configs):
+
+| Profile | Env file | Config | Speculative k | Use case |
+|---|---|---|---|---|
+| all-round (default) | [`profiles/tp4-tpmoe.env`](../profiles/tp4-tpmoe.env) | [`configs/serve-tp4-tpmoe-k2.yaml`](../configs/serve-tp4-tpmoe-k2.yaml) | 2 | mixed / high-concurrency |
+| code-heavy | [`profiles/tp4-tpmoe-k4.env`](../profiles/tp4-tpmoe-k4.env) | [`configs/serve-tp4-tpmoe-k4.yaml`](../configs/serve-tp4-tpmoe-k4.yaml) | 4 | low-concurrency, code-focused |
+
+### k=2 (default): decode tok/s by context x concurrency
+
+| Context | c1 | c2 | c3 | c4 | c5 | c6 | c7 | c8 | c9 | c10 |
+|---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
+| 0 | 36.5 | 49.4 | 63.1 | 62.7 | 68.7 | 71.5 | 80.4 | 80.1 | 87.1 | 87.2 |
+| 16k | 31.2 | 49.4 | 62.3 | 65.1 | 72.5 | 75.3 | 81.4 | 82.3 | 87.4 | 89.7 |
+| 32k | 30.9 | 50.1 | 61.9 | 64.0 | 74.5 | 77.5 | 81.4 | 85.1 | 88.3 | 90.4 |
+| 64k | 33.7 | 52.0 | 58.3 | 65.0 | 69.8 | 70.2 | 80.6 | 82.4 | 83.2 | 87.1 |
+| 128k | 35.4 | 50.4 | 59.3 | 62.8 | 70.5 | 72.1 | 81.7 | 85.9 | 87.0 | 91.0 |
+
+`--coding-peak` (c1, 3 runs): **44.6 tok/s**. The bench's default decode
+prompt is prose-like; use `--coding-peak` to measure code workloads.
+
+### k=4 (code-heavy, DSpark's trained max at `dspark_block_size=5`)
+
+| Cell | k=2 | k=4 | Delta |
+|---|---:|---:|---:|
+| coding-peak (c1) | 44.6 | **50.2** | +13% |
+| bench decode, c1 | 36.5 | 32.9 | -9% |
+| bench decode, c2 | 49.4 | 45.4 | -8% |
+| bench decode, c4 | 62.7 | 53.2 | -15% |
+| bench decode, c8 | 80.1 | 71.8 | -10% |
+| bench decode, c10 | 87.2 | 71.6 | -18% |
+
+k=4 trades mixed/high-concurrency throughput for peak single/low-concurrency
+code decode speed. Its capture sizes are multiples of 5 up to 50
+(`PADDED_MAX_T=64`, `NATIVE_MOE_MAX_ROWS=64`) to match `rows = max-num-seqs *
+(k+1)`.
+
+### Draft acceptance by content (k=2, mean accept length, max 3.0)
+
+| Content | temp 0 | temp 0.6 | temp 1.0 |
+|---|---:|---:|---:|
+| code | 2.69 | 2.70 | 2.72 |
+| prose | 1.82 | 1.91 | 2.01 |
+
+Code acceptance is stable across temperature; prose acceptance is lower and
+more temperature-sensitive. This is also why the bench's default decode
+prompt (prose-like) undercounts code throughput — use `--coding-peak` there.
+
+### Config guidance
+
+- `PADDED_MAX_T` / `NATIVE_MOE_MAX_ROWS` should be sized for the largest
+  batch (`rows = max-num-seqs * (k+1)`). With PR #37 landed, headroom above
+  the real row count is free; without PR #37, set it to the exact row count
+  or padded-loop rows beyond `n_valid` do real work.
+- History of this line of tuning, single-stream c1: control 28.5 tok/s ->
+  `PADDED_MAX_T=4` 31.1 tok/s -> TP-MoE 36.0 tok/s.
+
 ## Geometry
 
 - 4 Sparks, one GB10 each; tensor parallel 4, expert parallel on

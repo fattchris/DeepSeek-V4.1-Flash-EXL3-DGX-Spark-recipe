@@ -31,6 +31,16 @@ The released source experts are already low precision, and EXL3 re-encoding cann
 the source lost. To measure quality, compare **additional** transcode loss against the original
 `deepseek-ai/DeepSeek-V4.1-Flash` checkpoint on fixed prompts with deterministic settings.
 
+## TP-MoE (EP1)
+
+TP4's alternative to EP4 routes MoE through tensor parallelism instead of
+expert parallelism (`MOE_PARALLEL_MODE=tp`, see
+[`four-spark-tp4/README.md`](../four-spark-tp4/README.md#tp-moe-ep1-current-best-serving-configs)).
+It requires two `vllm-exl3` PRs still pending upstream:
+
+- [PR #36](https://github.com/vcruz305/vllm-exl3/pull/36): Hadamard-aligned uneven TP MoE (`VLLM_EXL3_MOE_TP_ALIGN=128`)
+- [PR #37](https://github.com/vcruz305/vllm-exl3/pull/37): padded-MoE loops bounded by `n_valid`
+
 ## Upstream
 
 - ExLlamaV3: https://github.com/turboderp-org/exllamav3
