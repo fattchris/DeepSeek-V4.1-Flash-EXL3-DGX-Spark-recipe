@@ -100,20 +100,19 @@ Measured by **@fattchris** on 4x DGX Spark (GB10), TP4, DSpark, with
 
 Mean draft acceptance: ~4.1 tokens/step at c1-c2, dropping to 3.38 at c10.
 
-At c1-c2 (batches of 1-4 sequences), the schedule runs k=4 and wins on both
-acceptance and throughput: high acceptance (~4.1/4) and few enough
-concurrent sequences that the extra verified row per step is cheap, so
-dynamic beats both fixed profiles outright (64.8 and 91.0 vs. fixed k=4's
-60.9 and 93.0 and fixed k=3's 56.4 and 85.4). Past ~4 concurrent requests
-the schedule drops to k=3: at c10 a k=4 step verifies up to `max-num-seqs *
-(k+1)` = 50 rows, and beyond that concurrency the row cost outgrows the
-acceptance gain, so k=3 (up to 40 rows) wins even though its per-request
-acceptance is lower — dynamic tracks that crossover and comes out ahead of
-either fixed k at c10 (166.7 vs. 163.9 and 148.8). At c4, right at the
-boundary between the two schedule tiers, dynamic lands between the two
-fixed profiles (109.6, vs. fixed k=3's 112.3 and fixed k=4's 113.1) rather
-than winning outright — the benefit of picking the right k per step is
-clearest away from that boundary.
+With 1-4 sequences the schedule runs k=4: acceptance is high (~4.1 tokens per
+step) and few enough rows are verified that the extra row per step is cheap.
+Past ~4 concurrent requests it drops to k=3: at c10 a k=4 step would verify
+up to `max-num-seqs * (k+1)` = 50 rows, and at that concurrency the row cost
+outgrows the acceptance gain, so k=3 (up to 40 rows) is faster even though
+its per-request acceptance is lower.
+
+The result tracks the better fixed k at every concurrency: each dynamic cell
+is within about 3% of the best fixed profile (ahead at c1 and c10, slightly
+behind at c2 and c4). Each cell is a single 60 s run, so differences of that
+size are within run-to-run noise. The practical gain is removing k=4's
+concurrency penalty (148.8 -> 166.7 at c10) without giving up its
+low-concurrency advantage over k=3.
 
 Because either k can be active depending on batch size,
 `cudagraph_capture_sizes` must cover every row count either tier can
