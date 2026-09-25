@@ -57,23 +57,72 @@ An alternative to the EP4 path above: route MoE through tensor parallelism
 (padded-MoE loops bounded by `n_valid`). Also sets `VLLM_EXL3_TRELLIS_ARENA=0`.
 Cold load is ~9 minutes.
 
-**Recommended default: k=3.** With the grouped padded-MoE kernel
-(**[vllm-exl3 PR #39](https://github.com/vcruz305/vllm-exl3/pull/39)**,
-required in addition to PR #36/#37), k=3 is the production-champion
-setting for mixed traffic — see
-[Grouped padded-MoE kernel (PR #39)](#grouped-padded-moe-kernel-pr-39)
-below. Pick k=2 instead for peak multi-user throughput at high
-concurrency, or k=4 for single-stream code/agent workloads where
-low-concurrency decode speed matters more than aggregate throughput.
+**Recommended default: dynamic speculative length.** DSpark can schedule
+`num_speculative_tokens` per step from
+`num_speculative_tokens_per_batch_size` instead of using one fixed k for
+the whole run: k=4 for 1-4 concurrent sequences, k=3 for 5-10. This is now
+the production-champion setting for mixed traffic, replacing the fixed k=3
+default — see
+[Dynamic speculative length](#dynamic-speculative-length) below. The fixed-k
+profiles remain available as alternatives: k=2 for peak multi-user
+throughput at high concurrency, or k=4 for single-stream code/agent
+workloads where low-concurrency decode speed matters more than aggregate
+throughput.
 
-Three profiles, all in [`profiles/`](../profiles) and
+Four profiles, all in [`profiles/`](../profiles) and
 [`configs/`](../configs):
 
 | Profile | Env file | Config | Speculative k | Use case |
 |---|---|---|---|---|
-| production champion (recommended default) | [`profiles/tp4-tpmoe-k3.env`](../profiles/tp4-tpmoe-k3.env) | [`configs/serve-tp4-tpmoe-k3.yaml`](../configs/serve-tp4-tpmoe-k3.yaml) | 3 | mixed traffic |
+| production champion (recommended default) | [`profiles/tp4-tpmoe-dynk.env`](../profiles/tp4-tpmoe-dynk.env) | [`configs/serve-tp4-tpmoe-dynk.yaml`](../configs/serve-tp4-tpmoe-dynk.yaml) | dynamic (4 for c1-4, 3 for c5-10) | mixed traffic |
+| fixed k=3 (previous default) | [`profiles/tp4-tpmoe-k3.env`](../profiles/tp4-tpmoe-k3.env) | [`configs/serve-tp4-tpmoe-k3.yaml`](../configs/serve-tp4-tpmoe-k3.yaml) | 3 | mixed traffic, simplest config |
 | peak multi-user throughput | [`profiles/tp4-tpmoe.env`](../profiles/tp4-tpmoe.env) | [`configs/serve-tp4-tpmoe-k2.yaml`](../configs/serve-tp4-tpmoe-k2.yaml) | 2 | high-concurrency |
 | single-stream code/agent | [`profiles/tp4-tpmoe-k4.env`](../profiles/tp4-tpmoe-k4.env) | [`configs/serve-tp4-tpmoe-k4.yaml`](../configs/serve-tp4-tpmoe-k4.yaml) | 4 | low-concurrency, code-focused |
+
+### Dynamic speculative length
+
+Fixed k is a compromise: k=4 has higher draft acceptance than k=3 at every
+concurrency, but each extra speculative token means one more row to verify
+per step, and that row costs step time whether or not it is accepted.
+`num_speculative_tokens_per_batch_size` lets DSpark pick k per step instead
+of committing to one value for the whole run: `[[1, 4, 4], [5, 10, 3]]`
+means k=4 for batches of 1-4 sequences and k=3 for batches of 5-10.
+
+Measured by **@fattchris** on 4x DGX Spark (GB10), TP4, DSpark, with
+`llm-inference-bench`, chat code prompts, thinking disabled, temperature
+0.6, 60s sustained cells, grouped kernel (PR #39). Aggregate decode tok/s:
+
+| | c1 | c2 | c4 | c10 |
+|---|---:|---:|---:|---:|
+| fixed k=3 | 56.4 | 85.4 | 112.3 | 163.9 |
+| fixed k=4 | 60.9 | 93.0 | 113.1 | 148.8 |
+| dynamic (k=4 for 1-4 seqs, k=3 for 5-10) | **64.8** | **91.0** | 109.6 | **166.7** |
+
+Mean draft acceptance: ~4.1 tokens/step at c1-c2, dropping to 3.38 at c10.
+
+At c1-c2 (batches of 1-4 sequences), the schedule runs k=4 and wins on both
+acceptance and throughput: high acceptance (~4.1/4) and few enough
+concurrent sequences that the extra verified row per step is cheap, so
+dynamic beats both fixed profiles outright (64.8 and 91.0 vs. fixed k=4's
+60.9 and 93.0 and fixed k=3's 56.4 and 85.4). Past ~4 concurrent requests
+the schedule drops to k=3: at c10 a k=4 step verifies up to `max-num-seqs *
+(k+1)` = 50 rows, and beyond that concurrency the row cost outgrows the
+acceptance gain, so k=3 (up to 40 rows) wins even though its per-request
+acceptance is lower — dynamic tracks that crossover and comes out ahead of
+either fixed k at c10 (166.7 vs. 163.9 and 148.8). At c4, right at the
+boundary between the two schedule tiers, dynamic lands between the two
+fixed profiles (109.6, vs. fixed k=3's 112.3 and fixed k=4's 113.1) rather
+than winning outright — the benefit of picking the right k per step is
+clearest away from that boundary.
+
+Because either k can be active depending on batch size,
+`cudagraph_capture_sizes` must cover every row count either tier can
+produce: `[5, 10, 15, 20, 24, 28, 32, 36, 40]` covers k=4's `rows = seqs *
+5` for seqs 1-4 (5/10/15/20) and k=3's `rows = seqs * 4` for seqs 5-10
+(20/24/28/32/36/40).
+
+Correctness held 4/4 concurrent, including a Paris capital-of-France check,
+for every cell above.
 
 ### Grouped padded-MoE kernel (PR #39)
 

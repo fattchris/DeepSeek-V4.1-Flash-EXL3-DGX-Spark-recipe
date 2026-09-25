@@ -1,8 +1,9 @@
 # Serve config captured from the measured 4x Spark TP4 + TP-MoE deployment
-# (2026-09-24, k=3, previous production-champion default; superseded by the dynamic speculative length profile).
+# (2026-09-24, dynamic speculative length, production-champion default for
+# mixed traffic, replacing the fixed k=3 default).
 #
 # Source: /tmp/serve-tp4-d203.yaml.CHAMPION inside the `dsv41-tp4` container
-# on the vLLM server node. profiles/tp4-tpmoe-k3.env reproduces it through
+# on the vLLM server node. profiles/tp4-tpmoe-dynk.env reproduces it through
 # scripts/serve_tp4.sh (MOE_PARALLEL_MODE=tp).
 #
 # Runtime identity of the captured run:
@@ -12,13 +13,21 @@
 #                   (padded-MoE loops bounded by n_valid), and PR #39
 #                   (padded-MoE expert-grouped stage1/5: decode each
 #                   trellis tile once per expert instead of once per slot)
-#   bench           llm-inference-bench v0.4.29, 20s sustained cells
+#   bench           llm-inference-bench v0.4.29, chat code prompts,
+#                   thinking disabled, temperature 0.6, 60s sustained cells
 #   cold load       ~9 minutes
 #
 # Unlike the EP4 path (configs/serve-tp4-live.yaml), this profile disables
 # expert parallelism and the EP weight filter and routes MoE through tensor
 # parallelism instead, relying on PR #36/#37/#39 to keep the padded MoE
 # kernel correct and fast at the resulting uneven per-rank expert widths.
+#
+# Dynamic speculative length: DSpark schedules num_speculative_tokens per
+# step from num_speculative_tokens_per_batch_size, picking k=4 for small
+# batches (1-4 concurrent sequences) and k=3 for larger ones (5-10), instead
+# of a single fixed k for the whole run. See
+# four-spark-tp4/README.md#dynamic-speculative-length for why this beats
+# either fixed k across the full concurrency range.
 model: /models/dsv41-orig
 quantization: exl3
 tokenizer-mode: deepseek_v41
@@ -46,10 +55,11 @@ engram-config:
   cpu_offload: false
 speculative-config:
   method: dspark
-  num_speculative_tokens: 3
+  num_speculative_tokens: 4
+  num_speculative_tokens_per_batch_size: [[1, 4, 4], [5, 10, 3]]
   draft_sample_method: probabilistic
   rejection_sample_method: block
   quantization: mxfp4
 compilation-config:
   cudagraph_mode: FULL_DECODE_ONLY
-  cudagraph_capture_sizes: [4, 8, 12, 16, 20, 24, 28, 32, 36, 40]
+  cudagraph_capture_sizes: [5, 10, 15, 20, 24, 28, 32, 36, 40]
