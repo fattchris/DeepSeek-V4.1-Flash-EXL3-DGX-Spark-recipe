@@ -41,6 +41,7 @@ It requires three `vllm-exl3` PRs still pending upstream:
 - [PR #36](https://github.com/vcruz305/vllm-exl3/pull/36): Hadamard-aligned uneven TP MoE (`VLLM_EXL3_MOE_TP_ALIGN=128`)
 - [PR #37](https://github.com/vcruz305/vllm-exl3/pull/37): padded-MoE loops bounded by `n_valid`
 - [PR #39](https://github.com/vcruz305/vllm-exl3/pull/39): padded-MoE expert-grouped stage1/5 (decode each trellis tile once per expert, not once per slot; required for the recommended k=3 default)
+- [PR #40](https://github.com/vcruz305/vllm-exl3/pull/40): per-rank expert-weight rotation (`VLLM_EXL3_MOE_TP_ROTATE=1`, stacks on #36), balancing per-rank weight footprint to free memory for KV cache
 
 ## Upstream
 

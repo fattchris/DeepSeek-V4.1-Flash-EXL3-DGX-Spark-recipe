@@ -57,6 +57,13 @@ An alternative to the EP4 path above: route MoE through tensor parallelism
 (padded-MoE loops bounded by `n_valid`). Also sets `VLLM_EXL3_TRELLIS_ARENA=0`.
 Cold load is ~9 minutes.
 
+The recommended (dynamic-k) profile also enables
+**[vllm-exl3 PR #40](https://github.com/vcruz305/vllm-exl3/pull/40)**
+(stacks on #36; per-rank expert-weight rotation,
+`VLLM_EXL3_MOE_TP_ROTATE=1`), which rebalances per-rank weight footprint and
+frees enough memory to more than double the KV cache budget — see
+[Memory balance and KV capacity](#memory-balance-and-kv-capacity) below.
+
 **Recommended default: dynamic speculative length.** DSpark can schedule
 `num_speculative_tokens` per step from
 `num_speculative_tokens_per_batch_size` instead of using one fixed k for
@@ -122,6 +129,37 @@ produce: `[5, 10, 15, 20, 24, 28, 32, 36, 40]` covers k=4's `rows = seqs *
 
 Correctness held 4/4 concurrent, including a Paris capital-of-France check,
 for every cell above.
+
+### Memory balance and KV capacity
+
+TP-MoE's uneven per-rank expert widths mean the four ranks do not carry equal
+weight footprints: before rotation, per-rank routed-expert weights measured
+**70.1 / 70.1 / 56.8 / 56.8 GiB**. The two heavy ranks capped how much memory
+was available for KV cache everywhere else. PR #40's rotation
+(`VLLM_EXL3_MOE_TP_ROTATE=1`) redistributes expert weights across ranks so
+each one carries **63.4 GiB** instead — freeing memory that was previously
+stranded on the two light ranks.
+
+That headroom goes straight to KV cache. The recommended dynamic-k profile
+raises `kv-cache-memory-bytes` from 8 GiB to **17 GiB per rank**
+(`18253611008`), which raises the KV budget from 2,454,802 to **5,216,489
+tokens** — concurrent 1M-token contexts go from **2.34x to 4.97x**. Decode
+throughput is unchanged (code c1 ~61, c4 ~115, c10 ~169 tok/s).
+
+**Safety evidence for 17 GiB.** 17 GiB passed a 200k-token prefill followed
+by c4 decode load, then a prefill launched during c10 decode, and an
+uncached 195k-token prefill launched during c10 decode — with
+`MemAvailable` staying at or above 10.7 GB on every node throughout. 20 GiB
+passed a single 200k-token prefill in isolation but hit a GPU-driver OOM
+(`NV_ERR_NO_MEMORY`) once c4 load followed. **17 GiB is therefore the
+recommended cap** on the 128 GB GB10 unified-memory pool. If you want more
+margin, 14 GiB leaves roughly 22 GB of slack.
+
+**Ray caveat.** If a worker process dies mid-run, Ray can retain the dead
+node in its resource view and block the placement group from scheduling
+against the survivors. Do a clean Ray restart (stop the cluster on every
+node, then re-run `scripts/start_disk_engram_cluster.sh`) rather than trying
+to reuse a cluster that lost a worker.
 
 ### Grouped padded-MoE kernel (PR #39)
 

@@ -10,9 +10,14 @@
 #   topology        TP4 (MoE-TP4, EP1) over 4x GB10
 #   vllm-exl3       requires vcruz305/vllm-exl3 PR #36 (Hadamard-aligned
 #                   uneven TP MoE, VLLM_EXL3_MOE_TP_ALIGN=128), PR #37
-#                   (padded-MoE loops bounded by n_valid), and PR #39
+#                   (padded-MoE loops bounded by n_valid), PR #39
 #                   (padded-MoE expert-grouped stage1/5: decode each
-#                   trellis tile once per expert instead of once per slot)
+#                   trellis tile once per expert instead of once per slot),
+#                   and PR #40 (stacks on #36; per-rank expert-weight
+#                   rotation, VLLM_EXL3_MOE_TP_ROTATE=1) which rebalances
+#                   the uneven per-rank expert widths so no rank carries a
+#                   disproportionate weight footprint -- see "Memory balance
+#                   and KV capacity" in four-spark-tp4/README.md.
 #   bench           llm-inference-bench v0.4.29, chat code prompts,
 #                   thinking disabled, temperature 0.6, 60s sustained cells
 #   cold load       ~9 minutes
@@ -43,7 +48,7 @@ served-model-name: deepseek-v41-exl3
 host: 0.0.0.0
 port: 8002
 gpu-memory-utilization: 0.55
-kv-cache-memory-bytes: 8589934592
+kv-cache-memory-bytes: 18253611008
 max-model-len: 1048576
 max-num-seqs: 10
 max-num-batched-tokens: 4096
