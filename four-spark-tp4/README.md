@@ -57,18 +57,65 @@ An alternative to the EP4 path above: route MoE through tensor parallelism
 (padded-MoE loops bounded by `n_valid`). Also sets `VLLM_EXL3_TRELLIS_ARENA=0`.
 Cold load is ~9 minutes.
 
-Measured by **@fattchris** on 4x DGX Spark (GB10), TP4, DSpark, with
-`llm-inference-bench` v0.4.29 (20s sustained cells), 2026-09-24.
+**Recommended default: k=3.** With the grouped padded-MoE kernel
+(**[vllm-exl3 PR #39](https://github.com/vcruz305/vllm-exl3/pull/39)**,
+required in addition to PR #36/#37), k=3 is the production-champion
+setting for mixed traffic — see
+[Grouped padded-MoE kernel (PR #39)](#grouped-padded-moe-kernel-pr-39)
+below. Pick k=2 instead for peak multi-user throughput at high
+concurrency, or k=4 for single-stream code/agent workloads where
+low-concurrency decode speed matters more than aggregate throughput.
 
-Two profiles, both in [`profiles/`](../profiles) and
+Three profiles, all in [`profiles/`](../profiles) and
 [`configs/`](../configs):
 
 | Profile | Env file | Config | Speculative k | Use case |
 |---|---|---|---|---|
-| all-round (default) | [`profiles/tp4-tpmoe.env`](../profiles/tp4-tpmoe.env) | [`configs/serve-tp4-tpmoe-k2.yaml`](../configs/serve-tp4-tpmoe-k2.yaml) | 2 | mixed / high-concurrency |
-| code-heavy | [`profiles/tp4-tpmoe-k4.env`](../profiles/tp4-tpmoe-k4.env) | [`configs/serve-tp4-tpmoe-k4.yaml`](../configs/serve-tp4-tpmoe-k4.yaml) | 4 | low-concurrency, code-focused |
+| production champion (recommended default) | [`profiles/tp4-tpmoe-k3.env`](../profiles/tp4-tpmoe-k3.env) | [`configs/serve-tp4-tpmoe-k3.yaml`](../configs/serve-tp4-tpmoe-k3.yaml) | 3 | mixed traffic |
+| peak multi-user throughput | [`profiles/tp4-tpmoe.env`](../profiles/tp4-tpmoe.env) | [`configs/serve-tp4-tpmoe-k2.yaml`](../configs/serve-tp4-tpmoe-k2.yaml) | 2 | high-concurrency |
+| single-stream code/agent | [`profiles/tp4-tpmoe-k4.env`](../profiles/tp4-tpmoe-k4.env) | [`configs/serve-tp4-tpmoe-k4.yaml`](../configs/serve-tp4-tpmoe-k4.yaml) | 4 | low-concurrency, code-focused |
 
-### k=2 (default): decode tok/s by context x concurrency
+### Grouped padded-MoE kernel (PR #39)
+
+The padded MoE tile functions run an m16n8k16 MMA but previously filled
+only row 0 of the 16-row A fragment, decoding a full trellis tile per
+routing slot even when many slots shared the same expert.
+[PR #39](https://github.com/vcruz305/vllm-exl3/pull/39) groups the live
+slots by expert on device (up to 16 per group) so each weight tile is
+decoded once per expert instead of once per slot. It stacks on PR #36 and
+PR #37 and is bit-identical to the pre-grouped kernel (`P2B_GROUPED=0`
+reverts to the per-slot stages for A/B or rollback).
+
+Measured by **@fattchris** on 4x DGX Spark (GB10), TP4, DSpark, with
+`llm-inference-bench`, 2026-09-24. Decode tok/s, 4x DGX Spark TP-MoE:
+
+| concurrency | before grouped (k3) | grouped k2 | grouped k3 | grouped k4 |
+|---|---:|---:|---:|---:|
+| c1 | 35.9 | 34.3 | 35.0 | 36.0 |
+| code (c1, coding-peak) | 48.7 | 47.9 | 50.6 | 56.9 |
+| c2 | 52.3 | 59.5 | 59.5 | 52.0 |
+| c4 | 64.1 | 85.2 | 81.4 | 69.6 |
+| c8 | 79.3 | 119.1 | 122.2 | 118.9 |
+| c10 | 83.2 | 139.9 | 131.7 | 123.7 |
+
+Correctness held 4/4 concurrent for every cell above. Grouping is most
+effective at high concurrency (more slots per launch to group by expert)
+and gives k=3 mixed-traffic throughput close to k=2's peak while keeping
+much more of k=4's single-stream code speed — hence the change in
+recommended default from k=2 to k=3.
+
+Measured real-traffic expert reuse (k=3), the reason grouping pays off:
+
+| rows | slots | unique experts |
+|---:|---:|---:|
+| 4 | 24 | 16.1 |
+| 16 | 96 | 44.0 |
+
+The tables below (`k=2` decode-by-context-x-concurrency, the `k=2` vs
+`k=4` comparison, and draft acceptance) predate PR #39 and reflect the
+pre-grouped-kernel padded MoE path (PR #36/#37 only).
+
+### Pre-grouped-kernel: k=2 (previous default): decode tok/s by context x concurrency
 
 | Context | c1 | c2 | c3 | c4 | c5 | c6 | c7 | c8 | c9 | c10 |
 |---|---:|---:|---:|---:|---:|---:|---:|---:|---:|---:|
@@ -81,7 +128,7 @@ Two profiles, both in [`profiles/`](../profiles) and
 `--coding-peak` (c1, 3 runs): **44.6 tok/s**. The bench's default decode
 prompt is prose-like; use `--coding-peak` to measure code workloads.
 
-### k=4 (code-heavy, DSpark's trained max at `dspark_block_size=5`)
+### Pre-grouped-kernel: k=4 (code-heavy, DSpark's trained max at `dspark_block_size=5`)
 
 | Cell | k=2 | k=4 | Delta |
 |---|---:|---:|---:|
@@ -97,7 +144,7 @@ code decode speed. Its capture sizes are multiples of 5 up to 50
 (`PADDED_MAX_T=64`, `NATIVE_MOE_MAX_ROWS=64`) to match `rows = max-num-seqs *
 (k+1)`.
 
-### Draft acceptance by content (k=2, mean accept length, max 3.0)
+### Pre-grouped-kernel: draft acceptance by content (k=2, mean accept length, max 3.0)
 
 | Content | temp 0 | temp 0.6 | temp 1.0 |
 |---|---:|---:|---:|
