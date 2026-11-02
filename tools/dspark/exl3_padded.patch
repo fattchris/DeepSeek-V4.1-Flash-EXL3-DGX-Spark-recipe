@@ -1,0 +1,206 @@
+--- a/exl3.py
++++ b/exl3.py
+@@ -1519,6 +1519,154 @@
+     layer._exl3_fused_temps = temps
+     layer._exl3_fused_concurrency = concurrency
+     layer._exl3_k = int(layer._exl3_bits)
++
++
++def build_exl3_padded_state(layer: torch.nn.Module, inners: list[dict[str, Any]]) -> None:
++    """Preallocate the fixed-shape padded EP-dispatch buffers (finalize, once).
++
++    The ids grid is sentinel-filled with n_local and the weight grid zeroed,
++    so a padding row can never reach a pointer table even before the kernel's
++    token guard runs. Every allocation here is one-time and metadata-driven;
++    nothing in this helper reads the device (MAX_T/MAX_K come from env vars,
++    hidden from layer metadata).
++    """
++    if getattr(layer, "_exl3_padded", None) is not None:
++        return
++    try:
++        max_t = int(os.environ.get("VLLM_EXL3_PADDED_MAX_T", "16"))
++    except ValueError:
++        max_t = 16
++    try:
++        max_k = int(os.environ.get("VLLM_EXL3_PADDED_MAX_K", "6"))
++    except ValueError:
++        max_k = 6
++    if max_t <= 0 or max_k <= 0:
++        # Explicit disable: no padded buffers, the dispatch gate stays closed
++        # and the per-row mixed-K path handles every batch.
++        layer._exl3_padded = None
++        layer._exl3_padded_max_t = 0
++        return
++    max_t = min(max_t, 64)
++    max_k = min(max_k, 16)
++    device = layer.w13_suh.device
++    hidden = int(layer._exl3_hidden_size)
++    layer._exl3_padded = {
++        "x": torch.zeros((max_t, hidden), dtype=torch.float16, device=device),
++        "out": torch.zeros((max_t, hidden), dtype=torch.float16, device=device),
++        "ids": torch.full((max_t, max_k), len(inners), dtype=torch.int32, device=device),
++        "w": torch.zeros((max_t, max_k), dtype=torch.float16, device=device),
++        "n_valid": torch.zeros((1,), dtype=torch.int32, device=device),
++    }
++    layer._exl3_padded_max_t = max_t
++
++
++def apply_exl3_padded(
++    x2d: torch.Tensor,
++    ids: torch.Tensor,
++    weights: torch.Tensor,
++    layer: torch.nn.Module,
++    module: Any,
++    expert_map: torch.Tensor | None = None,
++    limit: float | None = None,
++) -> torch.Tensor | None:
++    """Fixed-shape padded native MoE apply: ONE launch, ZERO host syncs.
++
++    The host reads shapes only; every data op is a device-side copy into the
++    preallocated [MAX_T, MAX_K] staging grid built by build_exl3_padded_state.
++    Padding rows keep their sentinel ids / zero weights (the kernel's token
++    guard skips them regardless of content), the live row count travels to
++    the kernel as a device scalar via fill_, and the return value is the
++    shape-static view out[:T].  CUDA-graph caveat: fill_(rows) bakes the
++    capture-time batch size; vLLM graph replay uses fixed capture sizes, so
++    padded shapes align by construction.
++    """
++    pads = getattr(layer, "_exl3_padded", None)
++    ptrs = getattr(layer, "_exl3_ptrs", None)
++    k_tabs = getattr(layer, "_exl3_k_tabs", None)
++    if not isinstance(pads, dict) or not isinstance(ptrs, dict) or k_tabs is None:
++        return None
++    try:
++        ids_t = pads["ids"]
++        w_t = pads["w"]
++        x_t = pads["x"]
++        out_t = pads["out"]
++        n_valid_t = pads["n_valid"]
++    except KeyError:
++        return None
++    required = (
++        "gate_trellis",
++        "gate_suh",
++        "gate_svh",
++        "up_trellis",
++        "up_suh",
++        "up_svh",
++        "down_trellis",
++        "down_suh",
++        "down_svh",
++    )
++    if any(key not in ptrs for key in required):
++        return None
++    rows = int(x2d.shape[0])
++    max_t = int(x_t.shape[0])
++    max_k = int(ids_t.shape[1])
++    hidden = int(x_t.shape[1])
++    if (
++        rows < 1
++        or rows > max_t
++        or ids.dim() != 2
++        or int(ids.shape[0]) != rows
++        or int(ids.shape[-1]) != max_k
++    ):
++        return None
++    if (
++        int(x2d.shape[1]) != hidden
++        or hidden % 128 != 0
++        or int(getattr(layer, "_exl3_intermediate_local", 2048)) % 128 != 0
++    ):
++        return None
++    n_exp = int(k_tabs[0].numel())  # table-length metadata; never a device read
++    if n_exp < 1:
++        return None
++    intermediate = int(getattr(layer, "_exl3_intermediate_local", 2048))
++    clamp_limit = float(limit) if limit is not None else 0.0
++    local = map_topk_to_local(ids, n_exp, expert_map).reshape(ids.shape)
++    valid = (local >= 0) & (local < n_exp)
++    xh = x2d.to(dtype=torch.float16).contiguous()
++    # Device-only staging copies; padding rows [rows:] are never written and
++    # are skipped by the kernel's token guard whatever their content.
++    ids_t[:rows].copy_(local.to(dtype=torch.int32))
++    w_t[:rows].copy_(
++        weights.reshape_as(local)
++        .to(dtype=torch.float16)
++        .mul(valid.to(dtype=torch.float16))
++    )
++    x_t[:rows].copy_(xh)
++    n_valid_t.fill_(rows)  # host int -> device scalar write; async, graph-safe
++    module.p2b_fused_moe_padded(
++        x_t,
++        out_t,
++        ptrs["gate_trellis"],
++        ptrs["gate_suh"],
++        ptrs["gate_svh"],
++        ptrs["up_trellis"],
++        ptrs["up_suh"],
++        ptrs["up_svh"],
++        ptrs["down_trellis"],
++        ptrs["down_suh"],
++        ptrs["down_svh"],
++        ids_t,
++        w_t,
++        n_valid_t,
++        k_tabs[0],
++        k_tabs[1],
++        k_tabs[2],
++        n_exp,
++        max_k,
++        True,
++        intermediate,
++        clamp_limit,
++    )
++    return out_t[:rows].to(dtype=torch.float32)
+ 
+ 
+ def _native_moe_dimensions_supported(
+@@ -1678,6 +1826,23 @@
+             layer._exl3_fused_temps = None
+             layer._exl3_fused_concurrency = 0
+             return None
++        rows = int(x2d.shape[0])
++        if (
++            getattr(layer, "_exl3_padded", None) is not None
++            and rows <= int(getattr(layer, "_exl3_padded_max_t", 0))
++            and bool(getattr(module, "P2B_MOE_PADDED", False))
++        ):
++            # Fixed-shape padded dispatch (zero host syncs): one cooperative
++            # launch for the whole batch.  rows comes from shape metadata —
++            # known pre-capture, never a device read.
++            padded_out = apply_exl3_padded(
++                x2d, ids, weights, layer, module, expert_map, limit
++            )
++            if padded_out is not None:
++                return padded_out
++        # Fall through: per-row mixed-K launches (unchanged) when the padded
++        # buffers are absent, the batch exceeds MAX_T or the routing topk
++        # does not match MAX_K, or the extension lacks P2B_MOE_PADDED.
+         mk_ids = local.to(dtype=torch.int32).contiguous()
+         mk_valid = (local >= 0) & (local < n_exp)
+         mk_weights = (
+@@ -3258,6 +3423,15 @@
+                         for w in ("gate", "up", "down")
+                     )
+                     layer._exl3_k_max = max(int(k) for k in k_values)
++                    if native_mk is not None and bool(
++                        getattr(native_mk, "P2B_MOE_PADDED", False)
++                    ):
++                        # Fixed-shape padded EP dispatch (same ABI-4 .so with
++                        # the P2B_MOE_PADDED capability flag): preallocate the
++                        # sentinel-filled [MAX_T, MAX_K] staging grid once per
++                        # layer so the decode apply path needs no per-call
++                        # routing allocations and no device reads, ever.
++                        build_exl3_padded_state(layer, inners)
+                     fused_ok = True
+                 except Exception as exc:
+                     fused_err = repr(exc)
+
+@@
+-    have_ptrs = bool(getattr(layer, "_exl3_ptrs", None))
++    # _MIXEDK_GUARD (Fable Q1.1): never let the uniform-K exllamav3 fused path
++    # run on mixed-K layers — build_exl3_fused_state re-arms _exl3_ptrs there,
++    # and exl3_moe launches with the single layer K (wrong K on most experts).
++    have_ptrs = bool(getattr(layer, "_exl3_ptrs", None)) and not bool(
++        getattr(layer, "_exl3_mixed_k", False)
++    )
